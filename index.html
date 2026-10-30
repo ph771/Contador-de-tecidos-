@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="pt-BR">
-<head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head>
 <body>
 <meta charset="utf-8">
 <title>Contador de Cangas</title>
@@ -116,7 +116,7 @@ button.perigo { color: var(--errada) }
 
 <header>
   <h1>Contador de <span>Cangas</span></h1>
-  <div class="estado" id="estado">Toque em <b>Ligar câmera</b> para começar a contar.</div>
+  <div class="estado"><span id="estado">Toque em <b>Ligar câmera</b> para começar a contar.</span> <small id="versao"></small></div>
 </header>
 
 <div class="grade">
@@ -176,6 +176,8 @@ button.perigo { color: var(--errada) }
   const pequeno = document.createElement('canvas');
   const ctxPequeno = pequeno.getContext('2d', { willReadFrequently: true });
   const LARGURA = 160, AMOSTRA_MS = 100;
+  const ENDERECO = 'https://ph771.github.io/Contador-de-tecidos-/';
+  const VERSAO = '3';
 
   // ---------- Guardar no celular ----------
   function ler(chave, padrao) {
@@ -328,12 +330,31 @@ button.perigo { color: var(--errada) }
   async function ligarCamera() {
     liberarSom(); aviso('');
     pararTudo();
-    try {
-      fluxo = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: frente ? 'user' : 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false,
-      });
-    } catch (e) {
-      aviso('A câmera não abriu. Toque em "Ligar câmera" e escolha "Permitir" quando o navegador perguntar. Se você negou antes, libere a câmera nas configurações do site (cadeado ao lado do endereço).');
+    if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      aviso(`Este navegador não libera a câmera aqui. Abra no Chrome o endereço ${ENDERECO} (não pela página do GitHub nem por link dentro do WhatsApp/Instagram).`);
+      estado('Câmera indisponível.');
+      return;
+    }
+    const pedidos = [
+      { video: { facingMode: frente ? 'user' : 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+      { video: { facingMode: frente ? 'user' : 'environment' }, audio: false },
+      { video: true, audio: false },
+    ];
+    let erro = null;
+    for (const pedido of pedidos) {
+      try { fluxo = await navigator.mediaDevices.getUserMedia(pedido); erro = null; break; }
+      catch (e) { erro = e; if (e.name === 'NotAllowedError' || e.name === 'SecurityError') break; }
+    }
+    if (erro) {
+      const motivos = {
+        NotAllowedError: 'O acesso à câmera foi negado. Toque no cadeado (ou nos ⋮) ao lado do endereço → Permissões → Câmera → Permitir. Depois toque em "Ligar câmera".',
+        SecurityError: 'O acesso à câmera foi negado. Toque no cadeado ao lado do endereço → Permissões → Câmera → Permitir.',
+        NotReadableError: 'A câmera está sendo usada por outro aplicativo. Feche o app da câmera, WhatsApp ou chamadas de vídeo e toque em "Ligar câmera".',
+        NotFoundError: 'Nenhuma câmera foi encontrada neste aparelho.',
+        NotSupportedError: `Este navegador não libera a câmera. Abra no Chrome o endereço ${ENDERECO}.`,
+        AbortError: 'A câmera não respondeu. Feche outros apps que usam a câmera e tente de novo.',
+      };
+      aviso((motivos[erro.name] || 'A câmera não abriu.') + ` (código: ${erro.name || 'desconhecido'})`);
       estado('Câmera indisponível.');
       return;
     }
@@ -469,6 +490,7 @@ button.perigo { color: var(--errada) }
   };
   $('btnPadrao').onclick = () => { areas = structuredClone(PADRAO.areas); gravar('cangas.areas', areas); contador = criarContador({ areas }); };
 
+  $('versao').textContent = '· versão ' + VERSAO;
   mostrar();
   // Se a câmera já foi permitida antes, liga sozinha ao abrir o app.
   try {
