@@ -46,7 +46,7 @@ h1 span { color: var(--vinho) }
 .grade { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start }
 @media (max-width: 760px) { .grade { grid-template-columns: minmax(0, 1fr) } }
 
-.palco { position: relative; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; background: #111; border-radius: 10px; overflow: hidden; touch-action: none }
+.palco { position: relative; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; margin-inline: auto; background: #111; border-radius: 10px; overflow: hidden; touch-action: none }
 .palco video, .palco canvas { position: absolute; inset: 0; width: 100%; height: 100% }
 .palco video { object-fit: fill }
 .vazio { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 6px; padding: 16px; color: #e9e1e5; font-size: .95rem }
@@ -75,6 +75,23 @@ button.ativo { background: var(--vinho); border-color: var(--vinho); color: var(
 .cont.pisca { animation: pisca .6s ease-out }
 @keyframes pisca { from { background: color-mix(in srgb, var(--vinho) 22%, var(--painel)) } }
 @media (prefers-reduced-motion: reduce) { .cont.pisca { animation: none } }
+
+/* Celular deitado: imagem e placar lado a lado, tudo mais compacto para caber na altura. */
+@media (orientation: landscape) and (max-height: 540px) {
+  body { padding-block: 8px }
+  header { margin-bottom: 6px }
+  h1 { font-size: 1.25rem }
+  .grade { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 10px }
+  .placar { gap: 6px }
+  .cont { padding: 4px 10px 2px }
+  .cont output { font-size: clamp(2.2rem, 13vh, 3.6rem) }
+  .cont.total output { font-size: clamp(2.8rem, 18vh, 4.6rem) }
+  .acoes { gap: 6px; margin-top: 6px }
+  button { min-height: 40px; padding: 6px 10px; font-size: .92rem }
+  .fontes { margin-top: 6px; gap: 6px }
+  .registro { margin-top: 8px; padding: 6px 10px }
+  .registro ol { max-height: 4.5rem }
+}
 
 .acoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px }
 .acoes .certa { color: var(--certa) }
@@ -106,6 +123,7 @@ button.perigo { color: var(--errada) }
   <section>
     <div class="palco" id="palco">
       <video id="video" playsinline muted></video>
+      <canvas id="tela"></canvas>
       <canvas id="desenho"></canvas>
       <div class="vazio" id="vazio">
         <strong>Câmera desligada</strong>
@@ -115,6 +133,8 @@ button.perigo { color: var(--errada) }
     <div class="fontes">
       <button id="btnCamera" type="button">📷 Ligar câmera</button>
       <button id="btnTrocar" type="button" hidden>🔄 Trocar câmera</button>
+      <button id="btnDeitar" type="button">⛶ Tela cheia deitada</button>
+      <button id="btnGirar" type="button" hidden>⟳ Girar imagem</button>
       <button id="btnAreas" type="button">✏️ Ajustar áreas</button>
       <button id="btnPadrao" type="button" hidden>↩️ Áreas padrão</button>
     </div>
@@ -250,6 +270,44 @@ button.perigo { color: var(--errada) }
   // ---------- Fontes de imagem ----------
   let fluxo = null, frente = ler('cangas.frente', true), rodando = false, ultimaAmostra = -Infinity;
   let travaTela = null;
+  // Giro da imagem em graus. null = automático: imagem em pé é deitada (90°).
+  let giro = ler('cangas.giro', null);
+  const tela = $('tela'), ctxTela = tela.getContext('2d');
+
+  function giroAtual() {
+    if (giro !== null) return giro;
+    return video.videoHeight > video.videoWidth ? 90 : 0;
+  }
+  // Tamanho da imagem já girada.
+  function tamanhoGirado() {
+    const g = giroAtual(), vw = video.videoWidth, vh = video.videoHeight;
+    return g % 180 ? { w: vh, h: vw } : { w: vw, h: vh };
+  }
+  // Desenha o quadro atual da câmera girado, ocupando o canvas inteiro.
+  function desenharGirado(ctx, w, h) {
+    const g = giroAtual();
+    ctx.save();
+    ctx.translate(w / 2, h / 2);
+    ctx.rotate((g * Math.PI) / 180);
+    const dw = g % 180 ? h : w, dh = g % 180 ? w : h;
+    ctx.drawImage(video, -dw / 2, -dh / 2, dw, dh);
+    ctx.restore();
+  }
+  let proporcao = '';
+  function mostrarImagem() {
+    if (!video.videoWidth) return;
+    const { w, h } = tamanhoGirado();
+    const nova = `${w} / ${h}`;
+    if (nova !== proporcao) {
+      proporcao = nova;
+      palco.style.aspectRatio = nova;
+      palco.style.width = `min(100%, calc(70vh * ${(w / h).toFixed(4)}))`;
+    }
+    const r = palco.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
+    const cw = Math.round(r.width * dpr), ch = Math.round(r.height * dpr);
+    if (tela.width !== cw || tela.height !== ch) { tela.width = cw; tela.height = ch; }
+    desenharGirado(ctxTela, cw, ch);
+  }
 
   async function manterTelaAcesa() {
     try { if ('wakeLock' in navigator && !travaTela) { travaTela = await navigator.wakeLock.request('screen'); travaTela.onrelease = () => (travaTela = null); } } catch {}
@@ -280,7 +338,7 @@ button.perigo { color: var(--errada) }
       return;
     }
     video.srcObject = fluxo; await video.play().catch(() => {});
-    $('btnTrocar').hidden = false; $('btnCamera').textContent = '📷 Religar câmera';
+    $('btnTrocar').hidden = false; $('btnGirar').hidden = false; $('btnCamera').textContent = '📷 Religar câmera';
     comecar(`Contando pela câmera ${frente ? 'da frente' : 'de trás'}.`);
     manterTelaAcesa();
   }
@@ -302,11 +360,13 @@ button.perigo { color: var(--errada) }
   function passo() {
     if (!rodando) return;
     const t = performance.now();
+    mostrarImagem();
     if (t - ultimaAmostra >= AMOSTRA_MS - 5 && video.videoWidth) {
       ultimaAmostra = t;
-      const w = LARGURA, h = Math.round((LARGURA * video.videoHeight) / video.videoWidth);
+      const g = tamanhoGirado();
+      const w = LARGURA, h = Math.round((LARGURA * g.h) / g.w);
       if (pequeno.width !== w || pequeno.height !== h) { pequeno.width = w; pequeno.height = h; }
-      ctxPequeno.drawImage(video, 0, 0, w, h);
+      desenharGirado(ctxPequeno, w, h);
       const px = ctxPequeno.getImageData(0, 0, w, h).data, cinza = new Uint8Array(w * h);
       for (let i = 0, j = 0; j < cinza.length; i += 4, j++) cinza[j] = (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8;
       for (const e of contador.processar(cinza, w, h, t)) {
@@ -321,6 +381,29 @@ button.perigo { color: var(--errada) }
 
   $('btnCamera').onclick = ligarCamera;
   $('btnTrocar').onclick = () => { frente = !frente; gravar('cangas.frente', frente); ligarCamera(); };
+  $('btnGirar').onclick = () => {
+    giro = (giroAtual() + 90) % 360; gravar('cangas.giro', giro);
+    contador = criarContador({ areas }); // imagem nova: recomeça a referência do suporte
+  };
+
+  // Tela cheia com o celular deitado (Android). Onde não existir, o celular gira sozinho
+  // se a rotação automática estiver ligada.
+  async function deitar() {
+    try {
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      await screen.orientation.lock('landscape');
+      $('btnDeitar').textContent = '⛶ Sair da tela cheia';
+    } catch {
+      aviso('Este celular não deixou virar sozinho. Ligue a "Rotação automática" do celular e deite o aparelho.');
+    }
+  }
+  $('btnDeitar').onclick = () => {
+    if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+    deitar();
+  };
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) $('btnDeitar').textContent = '⛶ Tela cheia deitada';
+  });
 
   // ---------- Áreas: desenhar e ajustar ----------
   const CORES = { suporte: '--certa', saida: '--errada', ignorar: '--ignorar' };
