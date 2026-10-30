@@ -67,6 +67,8 @@ button:focus-visible { outline: 3px solid var(--vinho); outline-offset: 2px }
 button:disabled { opacity: .5; cursor: not-allowed }
 button.forte { background: var(--vinho); border-color: var(--vinho); color: var(--painel) }
 .aviso { margin: 8px 0 0; font-size: .9rem; color: var(--alerta) }
+.diag { margin: 0; font-size: .8rem; color: var(--suave); font-variant-numeric: tabular-nums }
+.diag b { color: var(--fg) }
 
 /* Ajuste do suporte */
 .ajuste { background: var(--painel); border: 2px solid var(--vinho); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px }
@@ -148,18 +150,19 @@ button.perigo { color: var(--alerta) }
   <section>
     <div class="ajuste" id="ajuste" hidden>
       <h2>Ajuste do suporte</h2>
-      <ol>
-        <li id="passo1">Com o dedo, <b>desenhe um retângulo na imagem</b> em volta da parte do suporte onde o tecido fica pendurado.</li>
-        <li>A <b>faixa tracejada</b> em volta precisa ficar livre: o app só conta quando nada (mão, máquina, pessoa) está atravessando ela. O retângulo deve cobrir a peça pendurada inteira.</li>
-        <li id="passo2">Para testar, <b>pendure uma peça</b> e tire a mão. Quando o app perceber, aparece "Peça percebida" aqui embaixo. Esse teste não entra na contagem.</li>
-        <li>Toque em <b>Pronto</b>.</li>
-      </ol>
-      <div class="medidor"><span>Movimento no suporte</span><i><b id="mSup"></b></i></div>
       <div class="teste" id="teste" aria-live="polite"></div>
+      <p class="diag" id="diag" hidden></p>
+      <div class="medidor"><span>Movimento no suporte</span><i><b id="mSup"></b></i></div>
       <div class="linha">
         <button id="btnPronto" class="forte" type="button" disabled>✔ Pronto</button>
         <button id="btnRefazer" type="button">↺ Desenhar de novo</button>
       </div>
+      <ol>
+        <li id="passo1">Com o dedo, <b>desenhe um retângulo na imagem</b> em volta da parte do suporte onde o tecido fica pendurado.</li>
+        <li>A <b>faixa tracejada</b> em volta precisa ficar livre: o app só conta quando nada (mão, máquina, pessoa) está atravessando ela. O retângulo deve cobrir a peça pendurada inteira.</li>
+        <li id="passo2">Para testar, <b>pendure uma peça</b> e tire a mão. Quando o app perceber, aparece "Peça percebida" no alto deste painel. Esse teste não entra na contagem.</li>
+        <li>Toque em <b>Pronto</b>.</li>
+      </ol>
     </div>
     <div id="placar">
     <div class="cont" id="cCerta"><small>Peças certas · suporte</small><output id="nCerta">0</output></div>
@@ -189,7 +192,7 @@ button.perigo { color: var(--alerta) }
   const ctxPequeno = pequeno.getContext('2d', { willReadFrequently: true });
   const LARGURA = 160, AMOSTRA_MS = 100;
   const ENDERECO = 'https://ph771.github.io/Contador-de-tecidos-/';
-  const VERSAO = '7';
+  const VERSAO = '8';
 
   // ---------- Guardar no celular ----------
   function ler(chave, padrao) {
@@ -457,7 +460,17 @@ button.perigo { color: var(--alerta) }
     avisoAtual = chave; selo(s1, tipo); estado(texto);
   }
   window.contadorAtual = () => contador; // para diagnóstico
-  let obstruidoMostrado = false;
+  let obstruidoMostrado = false, diagEm = 0;
+  // Linha pequena com o que o app está vendo: ajuda a entender por que contou ou não.
+  function mostrarDiagnostico(l) {
+    const agora = performance.now();
+    if (agora - diagEm < 400) return;
+    diagEm = agora;
+    const el = $('diag'); el.hidden = false;
+    const ref = l.cameraMexendo ? 'celular mexendo' : l.temReferencia ? 'pronto' : 'aprendendo (deixe o suporte parado)';
+    el.innerHTML = `Suporte: <b>${l.suporteParado ? 'parado' : 'mexendo'}</b> · mudança: <b>${Math.round((l.difSuporte || 0) * 100)}%</b>` +
+      ` · faixa: <b>${l.anelLivre ? 'livre' : 'ocupada'}</b> · referência: <b>${ref}</b>`;
+  }
   function passo() {
     if (!rodando) return;
     const t = performance.now();
@@ -479,10 +492,15 @@ button.perigo { color: var(--alerta) }
             el.textContent = `✓ Peça percebida às ${hora(Date.now())}. O suporte está bem marcado.`; bip([660, 990]);
           }
           else if (e.tipo === 'certa-desfeita') $('teste').textContent = 'Era só alguém na frente do suporte; não contaria.';
+          else if (e.tipo === 'ignorada') {
+            const el = $('teste'); delete el.dataset.percebida; el.dataset.faixa = '1';
+            el.textContent = 'Percebi uma mudança no suporte, mas algo ficou parado na faixa tracejada. Se for a própria peça pendurada, desenhe o retângulo maior, cobrindo a peça inteira, e teste de novo.';
+          }
         } else if (e.tipo === 'certa') adicionar(false);
         else if (e.tipo === 'certa-desfeita') desfazerUltimaAutomatica();
       }
       $('mSup').style.width = Math.min(100, contador.leitura.movSuporte * 200) + '%';
+      mostrarDiagnostico(contador.leitura);
       if (contando) avisarContagem(contador.leitura);
       else if (ajustando) {
         const el = $('teste'), l = contador.leitura;

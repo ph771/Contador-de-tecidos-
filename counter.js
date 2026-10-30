@@ -1,6 +1,7 @@
 // Lógica de contagem do Contador de Cangas.
 // Recebe quadros em tons de cinza (Uint8Array, largura × altura) com o tempo em ms
-// e devolve eventos: { tipo: 'certa' | 'certa-desfeita', t }.
+// e devolve eventos: { tipo: 'certa' | 'certa-desfeita' | 'ignorada', t }.
+// ('ignorada' = o suporte mudou, mas algo ficou atravessando a faixa; serve para avisar.)
 // Só olha a área do suporte: conta quando uma peça nova fica pendurada e parada ali.
 // Uma faixa em volta do suporte (o "anel") serve para não contar mão, máquina ou pessoa:
 // essas coisas sempre atravessam o anel, enquanto a peça pendurada fica só dentro do suporte.
@@ -14,11 +15,17 @@
     suporteParadoMov: 0.03, // fração máxima de pixels mexendo para considerar parado
     suporteParadoMs: 1500, // quanto tempo precisa ficar parado
     suporteMudouNcc: 0.6, // semelhança abaixo disso = peça nova no suporte
+    // Peça igual pendurada em cima de outra igual quase não muda o "desenho"; mas dobra,
+    // borda e volume mudam alguns pixels. Fração de pixels diferentes acima disso = mudou.
+    suporteMudouDif: 0.05,
     suporteVoltouNcc: 0.85, // se voltar a ficar igual ao antigo, desfaz a certa
     suporteDesfazMs: 10000, // janela para desfazer uma certa falsa (alguém parado na frente)
     // Anel: faixa em cima e dos lados do suporte (embaixo não, porque o tecido cai para baixo).
     anelLargura: 0.35, // largura do anel, em fração do lado menor do suporte
     anelLivreDif: 0.12, // fração de pixels diferentes acima disso = tem algo atravessando
+    // Se tudo (suporte e faixa) ficar parado esse tempo com a faixa diferente, aprende a cena
+    // como está, sem contar. Evita ficar travado esperando para sempre.
+    aceitaCenaMs: 5000,
     // Celular mexendo: quando quase a imagem toda muda de uma vez, não é peça, é a câmera.
     cameraMexeuMov: 0.45, // fração da imagem inteira mexendo
     // Volta a contar quando o movimento cai para o nível de trabalho normal (pessoa se
@@ -54,7 +61,11 @@
       const da = a[i] - ma, db = b[i] - mb;
       ab += da * db; aa += da * da; bb += db * db;
     }
-    return ab / Math.sqrt(aa * bb + 1e-6);
+    // Imagem lisa (sem desenho, ex.: camiseta de uma cor) não tem correlação definida:
+    // duas lisas contam como iguais (a diferença de pixels decide), lisa x desenhada, diferentes.
+    const lisaA = aa / n < 9, lisaB = bb / n < 9;
+    if (lisaA || lisaB) return lisaA && lisaB ? 1 : 0;
+    return ab / Math.sqrt(aa * bb);
   }
 
   // Índices dos pixels do anel: em cima e dos lados do suporte, fora dele.
@@ -164,36 +175,46 @@
       }
       const anelLivre = baseAnel !== null && difAnel <= cfg.anelLivreDif;
 
-      // ---- Certa: suporte parado com desenho novo e anel livre ----
+      // ---- Certa: suporte parado, diferente de antes e anel livre ----
       const movSuporte = movimento(img, anterior, w, rSuporte, cfg.limiarPixel);
-      let sem = 1, obstruido = false;
+      let sem = 1, difSup = 0, obstruido = false;
       if (movSuporte <= cfg.suporteParadoMov) {
         if (paradoDesde === null) paradoDesde = t;
-        if (t - paradoDesde >= cfg.suporteParadoMs) {
+        const paradoMs = t - paradoDesde;
+        if (paradoMs >= cfg.suporteParadoMs) {
           const agora = recortar(img, w, rSuporte);
+          const cenaParadaMs = Math.min(paradoMs, anelParadoMs);
           if (!baseSuporte) {
             if (anelLivre) baseSuporte = agora;
+            else if (cenaParadaMs >= cfg.aceitaCenaMs) { baseSuporte = agora; baseAnel = anelAgora; }
           } else {
             sem = semelhanca(agora, baseSuporte);
-            if (sem < cfg.suporteMudouNcc) {
-              if (!anelLivre) {
+            difSup = diferenca(agora, baseSuporte, cfg.limiarPixel);
+            const mudou = sem < cfg.suporteMudouNcc || difSup >= cfg.suporteMudouDif;
+            if (!anelLivre) {
+              if (cenaParadaMs >= cfg.aceitaCenaMs) {
+                // Ficou tudo parado com a faixa diferente: aprende a cena, sem contar.
+                if (mudou) eventos.push({ tipo: 'ignorada', motivo: 'faixa', t });
+                baseSuporte = agora; baseAnel = anelAgora;
+              } else if (mudou) {
                 // Mão, máquina ou pessoa ainda na frente: espera sair, sem contar
                 // e sem trocar a referência do suporte.
                 obstruido = true;
-              } else {
-                const voltou = ultimaCerta && t - ultimaCerta.t <= cfg.suporteDesfazMs &&
-                  semelhanca(agora, ultimaCerta.baseAntes) >= cfg.suporteVoltouNcc;
-                if (voltou) {
-                  // Era alguém parado na frente do suporte, e não uma peça nova.
-                  eventos.push({ tipo: 'certa-desfeita', t });
-                  ultimaCerta = null;
-                } else {
-                  eventos.push({ tipo: 'certa', t });
-                  ultimaCerta = { t, baseAntes: baseSuporte };
-                }
-                baseSuporte = agora;
               }
-            } else if (anelLivre) {
+            } else if (mudou) {
+              const a = ultimaCerta && ultimaCerta.baseAntes;
+              const voltou = a && t - ultimaCerta.t <= cfg.suporteDesfazMs &&
+                semelhanca(agora, a) >= cfg.suporteVoltouNcc && diferenca(agora, a, cfg.limiarPixel) < cfg.suporteMudouDif;
+              if (voltou) {
+                // Era alguém parado na frente do suporte, e não uma peça nova.
+                eventos.push({ tipo: 'certa-desfeita', t });
+                ultimaCerta = null;
+              } else {
+                eventos.push({ tipo: 'certa', t });
+                ultimaCerta = { t, baseAntes: baseSuporte };
+              }
+              baseSuporte = agora;
+            } else {
               baseSuporte = agora; // acompanha mudanças lentas de luz
             }
           }
@@ -208,6 +229,10 @@
       leitura.obstruidoMs = obstruidoDesde === null ? 0 : t - obstruidoDesde;
       leitura.movSuporte = movSuporte;
       leitura.semelhanca = sem;
+      leitura.difSuporte = difSup;
+      leitura.suporteParado = paradoDesde !== null && t - paradoDesde >= cfg.suporteParadoMs;
+      leitura.anelLivre = anelLivre;
+      leitura.temReferencia = baseSuporte !== null;
       anterior = img.slice();
       return eventos;
     }
