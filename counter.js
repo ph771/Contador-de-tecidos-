@@ -1,15 +1,12 @@
 // Lógica de contagem do Contador de Cangas.
 // Recebe quadros em tons de cinza (Uint8Array, largura × altura) com o tempo em ms
-// e devolve eventos: { tipo: 'certa' | 'errada' | 'certa-desfeita', t }.
+// e devolve eventos: { tipo: 'certa' | 'certa-desfeita', t }.
+// Só olha a área do suporte: conta quando uma peça nova fica pendurada e parada ali.
 // Não depende do navegador: a mesma lógica roda no celular e nos testes com vídeo.
 (function (root) {
   const PADRAO = {
-    // Áreas em frações da imagem (0 a 1).
-    areas: {
-      suporte: { x: 0.72, y: 0.78, w: 0.28, h: 0.18 },
-      saida: { x: 0.0, y: 0.0, w: 0.1, h: 0.45 },
-      ignorar: { x: 0.0, y: 0.48, w: 0.3, h: 0.52 },
-    },
+    // Área do suporte em frações da imagem (0 a 1).
+    suporte: { x: 0.72, y: 0.78, w: 0.28, h: 0.18 },
     limiarPixel: 25, // diferença de cinza para um pixel contar como "mexeu"
     // Certa: o suporte fica parado e com desenho diferente do que era antes.
     suporteParadoMov: 0.03, // fração máxima de pixels mexendo para considerar parado
@@ -17,10 +14,6 @@
     suporteMudouNcc: 0.6, // semelhança abaixo disso = peça nova no suporte
     suporteVoltouNcc: 0.85, // se voltar a ficar igual ao antigo, desfaz a certa
     suporteDesfazMs: 10000, // janela para desfazer uma certa falsa (alguém parado na frente)
-    // Errada: tecido grande atravessando a área de saída.
-    saidaMov: 0.3, // fração de pixels mexendo na área de saída
-    saidaQuadros: 2, // em quantas amostras seguidas
-    intervaloMs: 3000, // depois de contar uma errada, espera esse tempo antes de contar outra
     // Celular mexendo: quando quase a imagem toda muda de uma vez, não é peça, é a câmera.
     cameraMexeuMov: 0.45, // fração da imagem inteira mexendo
     // Volta a contar quando o movimento cai para o nível de trabalho normal (pessoa se
@@ -59,16 +52,11 @@
     return ab / Math.sqrt(aa * bb + 1e-6);
   }
 
-  function dentro(r, x, y) {
-    return x >= r.x0 && x < r.x1 && y >= r.y0 && y < r.y1;
-  }
-
-  // Fração de pixels que mexeram dentro de r, sem contar os que estão na área "ignorar".
-  function movimento(atual, anterior, w, r, ignorar, limiar) {
+  // Fração de pixels que mexeram dentro de r.
+  function movimento(atual, anterior, w, r, limiar) {
     let mexeu = 0, total = 0;
     for (let y = r.y0; y < r.y1; y++) {
       for (let x = r.x0; x < r.x1; x++) {
-        if (ignorar && dentro(ignorar, x, y)) continue;
         total++;
         const i = y * w + x;
         if (Math.abs(atual[i] - anterior[i]) > limiar) mexeu++;
@@ -79,35 +67,29 @@
 
   function criarContador(opcoes) {
     const cfg = Object.assign({}, PADRAO, opcoes || {});
-    cfg.areas = Object.assign({}, PADRAO.areas, (opcoes && opcoes.areas) || {});
 
-    let anterior = null, largura = 0, altura = 0, rs = null;
+    let anterior = null, largura = 0, altura = 0, rSuporte = null;
     let baseSuporte = null; // como o suporte estava da última vez que ficou parado
     let paradoDesde = null;
     let ultimaCerta = null; // { t, baseAntes } para poder desfazer
-    let ultimaErrada = -Infinity;
-    let saidaSeguidos = 0;
     let cameraMexendo = false, cameraParadaDesde = null;
-    const leitura = { movSuporte: 0, movSaida: 0, semelhanca: 1, cameraMexendo: false };
+    const leitura = { movSuporte: 0, movTotal: 0, semelhanca: 1, cameraMexendo: false };
     const tudo = () => ({ x0: 0, y0: 0, x1: largura, y1: altura });
 
     function preparar(w, h) {
       largura = w; altura = h;
-      rs = {
-        suporte: retangulo(cfg.areas.suporte, w, h),
-        saida: retangulo(cfg.areas.saida, w, h),
-        ignorar: retangulo(cfg.areas.ignorar, w, h),
-      };
-      anterior = null; baseSuporte = null; paradoDesde = null; ultimaCerta = null; saidaSeguidos = 0;
+      rSuporte = retangulo(cfg.suporte, w, h);
+      anterior = null; baseSuporte = null; paradoDesde = null; ultimaCerta = null;
     }
 
     function processar(img, w, h, t) {
-      if (w !== largura || h !== altura || !rs) preparar(w, h);
+      if (w !== largura || h !== altura || !rSuporte) preparar(w, h);
       const eventos = [];
       if (!anterior) { anterior = img.slice(); return eventos; }
 
       // ---- Celular mexendo: esquece tudo e espera a imagem parar ----
-      const movTotal = movimento(img, anterior, w, tudo(), null, cfg.limiarPixel);
+      // (a imagem toda é usada só para isso; nada fora do suporte é contado)
+      const movTotal = movimento(img, anterior, w, tudo(), cfg.limiarPixel);
       leitura.movTotal = movTotal;
       if (movTotal >= cfg.cameraMexeuMov) { cameraMexendo = true; cameraParadaDesde = null; }
       if (cameraMexendo) {
@@ -118,29 +100,20 @@
           cameraParadaDesde = null;
         }
         // Referências antigas não valem mais: a câmera pode ter mudado de posição.
-        baseSuporte = null; paradoDesde = null; ultimaCerta = null; saidaSeguidos = 0;
+        baseSuporte = null; paradoDesde = null; ultimaCerta = null;
         leitura.cameraMexendo = true;
         anterior = img.slice();
         return eventos;
       }
       leitura.cameraMexendo = false;
 
-      // ---- Errada: tecido grande saindo pela área de saída ----
-      const movSaida = movimento(img, anterior, w, rs.saida, rs.ignorar, cfg.limiarPixel);
-      saidaSeguidos = movSaida >= cfg.saidaMov ? saidaSeguidos + 1 : 0;
-      if (saidaSeguidos >= cfg.saidaQuadros && t - ultimaErrada >= cfg.intervaloMs) {
-        eventos.push({ tipo: 'errada', t });
-        ultimaErrada = t;
-        saidaSeguidos = 0;
-      }
-
       // ---- Certa: suporte parado com desenho novo ----
-      const movSuporte = movimento(img, anterior, w, rs.suporte, null, cfg.limiarPixel);
+      const movSuporte = movimento(img, anterior, w, rSuporte, cfg.limiarPixel);
       let sem = 1;
       if (movSuporte <= cfg.suporteParadoMov) {
         if (paradoDesde === null) paradoDesde = t;
         if (t - paradoDesde >= cfg.suporteParadoMs) {
-          const agora = recortar(img, w, rs.suporte);
+          const agora = recortar(img, w, rSuporte);
           if (!baseSuporte) {
             baseSuporte = agora;
           } else {
@@ -165,7 +138,6 @@
       }
 
       leitura.movSuporte = movSuporte;
-      leitura.movSaida = movSaida;
       leitura.semelhanca = sem;
       anterior = img.slice();
       return eventos;

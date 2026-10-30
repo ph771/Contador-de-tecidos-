@@ -8,7 +8,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
 <style>
-/* Layout: imagem da câmera com as áreas à esquerda, placar grande à direita; empilha no celular em pé. */
+/* Layout: imagem da câmera com o suporte marcado à esquerda, placar grande à direita; empilha no celular em pé. */
 :root {
   --bg: #f6f2ec;        /* tecido cru */
   --painel: #ffffff;
@@ -17,17 +17,16 @@
   --linha: #e3dad3;
   --vinho: #7d3f5c;     /* cor da estampa */
   --certa: #1f7a4d;
-  --errada: #c0392b;
-  --ignorar: #5d6470;
+  --alerta: #c0392b;
   --numero: "Barlow Condensed", "Arial Narrow", sans-serif;
   --texto: "Atkinson Hyperlegible", system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #1b1619; --painel: #262024; --fg: #f1e9ec; --suave: #ab9ca4; --linha: #3a3237;
-  --vinho: #d48aad; --certa: #4cc489; --errada: #ff7a6b; --ignorar: #9aa2ad; color-scheme: dark } }
+  --vinho: #d48aad; --certa: #4cc489; --alerta: #ff7a6b; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #1b1619; --painel: #262024; --fg: #f1e9ec; --suave: #ab9ca4; --linha: #3a3237;
-  --vinho: #d48aad; --certa: #4cc489; --errada: #ff7a6b; --ignorar: #9aa2ad; color-scheme: dark }
+  --vinho: #d48aad; --certa: #4cc489; --alerta: #ff7a6b; color-scheme: dark }
 
 * { box-sizing: border-box }
 [hidden] { display: none !important }
@@ -42,6 +41,10 @@ h1 { font: 700 1.6rem/1 var(--numero); letter-spacing: .02em; margin: 0; text-wr
 h1 span { color: var(--vinho) }
 .estado { font-size: .9rem; color: var(--suave) }
 .estado b { color: var(--fg) }
+.selo { display: inline-block; font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--linha); color: var(--suave) }
+.selo.on { background: var(--certa); color: var(--painel) }
+.selo.alerta { background: var(--alerta); color: var(--painel) }
+.selo.marcar { background: var(--vinho); color: var(--painel) }
 
 .grade { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start }
 @media (max-width: 760px) { .grade { grid-template-columns: minmax(0, 1fr) } }
@@ -49,6 +52,7 @@ h1 span { color: var(--vinho) }
 .palco { position: relative; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; margin-inline: auto; background: #111; border-radius: 10px; overflow: hidden; touch-action: none }
 .palco video, .palco canvas { position: absolute; inset: 0; width: 100%; height: 100% }
 .palco video { object-fit: fill }
+.palco.marcando { outline: 3px solid var(--vinho); outline-offset: 2px; cursor: crosshair }
 .vazio { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 6px; padding: 16px; color: #e9e1e5; font-size: .95rem }
 .vazio strong { font: 700 1.3rem var(--numero); letter-spacing: .03em }
 
@@ -56,54 +60,39 @@ h1 span { color: var(--vinho) }
 button {
   font: 700 1rem var(--texto); color: var(--fg); background: var(--painel);
   border: 1.5px solid var(--linha); border-radius: 8px; padding: 10px 14px; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 44px;
 }
 button:hover { border-color: var(--vinho) }
 button:focus-visible { outline: 3px solid var(--vinho); outline-offset: 2px }
-button.ativo { background: var(--vinho); border-color: var(--vinho); color: var(--bg) }
-.aviso { margin: 8px 0 0; font-size: .9rem; color: var(--errada) }
-.dica { margin: 8px 0 0; font-size: .88rem; color: var(--suave) }
+button:disabled { opacity: .5; cursor: not-allowed }
+button.forte { background: var(--vinho); border-color: var(--vinho); color: var(--painel) }
+.aviso { margin: 8px 0 0; font-size: .9rem; color: var(--alerta) }
 
-.placar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
-.cont { background: var(--painel); border: 1.5px solid var(--linha); border-radius: 10px; padding: 10px 14px 6px }
-.cont small { display: block; font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--suave) }
-.cont output { display: block; font: 700 clamp(3.2rem, 9vw, 5.5rem)/1 var(--numero); font-variant-numeric: tabular-nums }
-.cont.total { grid-column: 1 / -1; border-color: var(--vinho) }
-.cont.total output { color: var(--vinho); font-size: clamp(4rem, 12vw, 7rem) }
-.cont.certa output { color: var(--certa) }
-.cont.errada output { color: var(--errada) }
+/* Ajuste do suporte */
+.ajuste { background: var(--painel); border: 2px solid var(--vinho); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px }
+.ajuste h2 { margin: 0; font: 700 1.15rem var(--numero); letter-spacing: .04em; text-transform: uppercase; color: var(--vinho) }
+.ajuste ol { margin: 0; padding-left: 1.2rem; display: grid; gap: 4px; font-size: .95rem }
+.ajuste .feito { color: var(--certa); font-weight: 700 }
+.ajuste .linha { display: flex; flex-wrap: wrap; gap: 8px }
+.medidor { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 8px; font-size: .85rem; color: var(--suave) }
+.medidor i { display: block; height: 10px; background: var(--linha); border-radius: 5px; overflow: hidden }
+.medidor i b { display: block; height: 100%; width: 0; background: var(--certa); transition: width .1s }
+.teste { font-weight: 700; color: var(--certa) }
+
+/* Placar */
+.cont { background: var(--painel); border: 2px solid var(--certa); border-radius: 10px; padding: 10px 16px 8px }
+.cont small { display: block; font-size: .8rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--suave) }
+.cont output { display: block; font: 700 clamp(5rem, 16vw, 9rem)/1 var(--numero); color: var(--certa); font-variant-numeric: tabular-nums }
 .cont.pisca { animation: pisca .6s ease-out }
-@keyframes pisca { from { background: color-mix(in srgb, var(--vinho) 22%, var(--painel)) } }
+@keyframes pisca { from { background: color-mix(in srgb, var(--certa) 25%, var(--painel)) } }
 @media (prefers-reduced-motion: reduce) { .cont.pisca { animation: none } }
 
-/* Celular deitado: imagem e placar lado a lado, tudo mais compacto para caber na altura. */
-@media (orientation: landscape) and (max-height: 540px) {
-  body { padding-block: 8px }
-  header { margin-bottom: 6px }
-  h1 { font-size: 1.25rem }
-  .grade { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 10px }
-  .placar { gap: 6px }
-  .cont { padding: 4px 10px 2px }
-  .cont output { font-size: clamp(2.2rem, 13vh, 3.6rem) }
-  .cont.total output { font-size: clamp(2.8rem, 18vh, 4.6rem) }
-  .acoes { gap: 6px; margin-top: 6px }
-  button { min-height: 40px; padding: 6px 10px; font-size: .92rem }
-  .fontes { margin-top: 6px; gap: 6px }
-  .registro { margin-top: 8px; padding: 6px 10px }
-  .registro ol { max-height: 4.5rem }
-}
-
 .acoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px }
-.acoes .certa { color: var(--certa) }
-.acoes .errada { color: var(--errada) }
-.acoes .largo { grid-column: 1 / -1; justify-content: center }
-button.perigo { color: var(--errada) }
-button.iniciar { grid-column: 1 / -1; justify-content: center; background: var(--certa); border-color: var(--certa); color: var(--painel); font-size: 1.15rem; min-height: 52px }
+.acoes .largo { grid-column: 1 / -1 }
+button.iniciar { background: var(--certa); border-color: var(--certa); color: var(--painel); font-size: 1.15rem; min-height: 52px }
 button.iniciar.pausar { background: var(--painel); color: var(--fg); border-color: var(--vinho) }
-button:disabled { opacity: .5; cursor: not-allowed }
-.selo { display: inline-block; font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--linha); color: var(--suave) }
-.selo.on { background: var(--certa); color: var(--painel) }
-.selo.alerta { background: var(--errada); color: var(--painel) }
+button.mais { color: var(--certa) }
+button.perigo { color: var(--alerta) }
 
 .registro { margin-top: 14px; background: var(--painel); border: 1.5px solid var(--linha); border-radius: 10px; padding: 10px 14px }
 .registro h2 { font: 700 1rem var(--numero); letter-spacing: .06em; text-transform: uppercase; margin: 0 0 6px; color: var(--suave) }
@@ -111,13 +100,23 @@ button:disabled { opacity: .5; cursor: not-allowed }
 .registro li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-top: 1px solid var(--linha); font-size: .92rem }
 .registro li:first-child { border-top: 0 }
 .registro .c { color: var(--certa); font-weight: 700 }
-.registro .e { color: var(--errada); font-weight: 700 }
 .registro .m { color: var(--suave); font-size: .8rem }
 
-.medidores { display: grid; gap: 4px; margin-top: 8px; font-size: .8rem; color: var(--suave) }
-.medidor { display: grid; grid-template-columns: 7.5rem 1fr; align-items: center; gap: 8px }
-.medidor i { display: block; height: 8px; background: var(--linha); border-radius: 4px; overflow: hidden }
-.medidor i b { display: block; height: 100%; width: 0; background: var(--vinho) }
+/* Celular deitado: imagem e placar lado a lado, tudo mais compacto para caber na altura. */
+@media (orientation: landscape) and (max-height: 540px) {
+  body { padding-block: 8px }
+  header { margin-bottom: 6px }
+  h1 { font-size: 1.25rem }
+  .grade { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 10px }
+  .cont { padding: 4px 12px 2px }
+  .cont output { font-size: clamp(3.4rem, 28vh, 6rem) }
+  .acoes { gap: 6px; margin-top: 6px }
+  button { min-height: 40px; padding: 6px 10px; font-size: .92rem }
+  button.iniciar { min-height: 46px }
+  .fontes { margin-top: 6px; gap: 6px }
+  .registro { margin-top: 8px; padding: 6px 10px }
+  .registro ol { max-height: 4.5rem }
+}
 </style>
 
 <header>
@@ -133,7 +132,7 @@ button:disabled { opacity: .5; cursor: not-allowed }
       <canvas id="desenho"></canvas>
       <div class="vazio" id="vazio">
         <strong>Câmera desligada</strong>
-        <span>Verde: suporte (certas) · Vermelho: saída dos errados · Cinza: cortadeira (ignorar)</span>
+        <span>O app conta só as peças penduradas no suporte.</span>
       </div>
     </div>
     <div class="fontes">
@@ -141,28 +140,33 @@ button:disabled { opacity: .5; cursor: not-allowed }
       <button id="btnTrocar" type="button" hidden>🔄 Trocar câmera</button>
       <button id="btnDeitar" type="button">⛶ Tela cheia deitada</button>
       <button id="btnGirar" type="button" hidden>⟳ Girar imagem</button>
-      <button id="btnAreas" type="button">✏️ Ajustar áreas</button>
-      <button id="btnPadrao" type="button" hidden>↩️ Áreas padrão</button>
+      <button id="btnMarcar" type="button" hidden>📐 Marcar suporte</button>
     </div>
     <p class="aviso" id="aviso" hidden></p>
-    <p class="dica" id="dicaAreas" hidden>Arraste cada retângulo para mover. Arraste o cantinho de baixo à direita para mudar o tamanho. Toque em "Ajustar áreas" de novo para terminar.</p>
-    <div class="medidores" id="medidores" hidden>
-      <div class="medidor"><span>Movimento suporte</span><i><b id="mSup"></b></i></div>
-      <div class="medidor"><span>Movimento saída</span><i><b id="mSai"></b></i></div>
-    </div>
+
   </section>
 
   <section>
-    <div class="placar">
-      <div class="cont total" id="cTotal"><small>Total</small><output id="nTotal">0</output></div>
-      <div class="cont certa" id="cCerta"><small>Certas · suporte</small><output id="nCerta">0</output></div>
-      <div class="cont errada" id="cErrada"><small>Erradas</small><output id="nErrada">0</output></div>
+    <div class="ajuste" id="ajuste" hidden>
+      <h2>Ajuste do suporte</h2>
+      <ol>
+        <li id="passo1">Com o dedo, <b>desenhe um retângulo na imagem</b> em volta da parte do suporte onde o tecido fica pendurado.</li>
+        <li id="passo2">Para testar, <b>pendure uma peça</b> e tire a mão. Quando o app perceber, aparece "Peça percebida" aqui embaixo. Esse teste não entra na contagem.</li>
+        <li>Toque em <b>Pronto</b>.</li>
+      </ol>
+      <div class="medidor"><span>Movimento no suporte</span><i><b id="mSup"></b></i></div>
+      <div class="teste" id="teste" aria-live="polite"></div>
+      <div class="linha">
+        <button id="btnPronto" class="forte" type="button" disabled>✔ Pronto</button>
+        <button id="btnRefazer" type="button">↺ Desenhar de novo</button>
+      </div>
     </div>
+    <div id="placar">
+    <div class="cont" id="cCerta"><small>Peças certas · suporte</small><output id="nCerta">0</output></div>
     <div class="acoes">
-      <button id="btnContar" class="iniciar" type="button" disabled>▶ Começar a contar</button>
-      <button id="maisCerta" class="certa" type="button">+1 Certa</button>
-      <button id="maisErrada" class="errada" type="button">+1 Errada</button>
-      <button id="desfazer" class="largo" type="button">↶ Desfazer a última</button>
+      <button id="btnContar" class="iniciar largo" type="button" disabled>▶ Começar a contar</button>
+      <button id="mais" class="mais" type="button">+1</button>
+      <button id="desfazer" type="button">−1 (desfazer)</button>
       <button id="copiar" type="button">📋 Copiar resumo</button>
       <button id="zerar" class="perigo" type="button">Zerar</button>
     </div>
@@ -170,21 +174,23 @@ button:disabled { opacity: .5; cursor: not-allowed }
       <h2>Registro</h2>
       <ol id="lista"><li><span class="m">Nada contado ainda.</span></li></ol>
     </div>
+    </div>
   </section>
 </div>
 
 <script src="counter.js"></script>
 <script>
 (() => {
-  const { criarContador, PADRAO } = window.ContadorCangas;
+  const { criarContador } = window.ContadorCangas;
   const $ = (id) => document.getElementById(id);
   const video = $('video'), desenho = $('desenho'), palco = $('palco');
   const ctxDesenho = desenho.getContext('2d');
+  const tela = $('tela'), ctxTela = tela.getContext('2d');
   const pequeno = document.createElement('canvas');
   const ctxPequeno = pequeno.getContext('2d', { willReadFrequently: true });
   const LARGURA = 160, AMOSTRA_MS = 100;
   const ENDERECO = 'https://ph771.github.io/Contador-de-tecidos-/';
-  const VERSAO = '4';
+  const VERSAO = '5';
 
   // ---------- Guardar no celular ----------
   function ler(chave, padrao) {
@@ -192,20 +198,15 @@ button:disabled { opacity: .5; cursor: not-allowed }
   }
   function gravar(chave, valor) { try { localStorage.setItem(chave, JSON.stringify(valor)); } catch {} }
 
-  let areas = ler('cangas.areas', structuredClone(PADRAO.areas));
-  let registro = ler('cangas.registro', []); // [{ tipo: 'certa'|'errada', hora, manual }]
-  let contador = criarContador({ areas });
+  let suporte = ler('cangas.suporte', null); // { x, y, w, h } em frações da imagem; null = ainda não marcado
+  // Registro só de peças certas: [{ hora, manual }]. Versões antigas também guardavam erradas.
+  let registro = ler('cangas.registro', []).filter((r) => !r.tipo || r.tipo === 'certa').map(({ hora, manual }) => ({ hora, manual }));
+  let contador = null;
 
   // ---------- Placar ----------
   function hora(ts) { return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
-  function totais() {
-    const certas = registro.filter((r) => r.tipo === 'certa').length;
-    const erradas = registro.length - certas;
-    return { certas, erradas, total: registro.length };
-  }
   function mostrar(piscar) {
-    const t = totais();
-    $('nTotal').value = t.total; $('nCerta').value = t.certas; $('nErrada').value = t.erradas;
+    $('nCerta').value = registro.length;
     const lista = $('lista');
     lista.replaceChildren();
     if (!registro.length) {
@@ -213,25 +214,20 @@ button:disabled { opacity: .5; cursor: not-allowed }
     }
     for (let i = registro.length - 1; i >= 0; i--) {
       const r = registro[i], li = document.createElement('li');
-      const a = document.createElement('span'); a.className = r.tipo === 'certa' ? 'c' : 'e';
-      a.textContent = `${i + 1}. ${r.tipo === 'certa' ? 'Certa' : 'Errada'}`;
-      const b = document.createElement('span'); b.className = 'm';
-      b.textContent = `${hora(r.hora)}${r.manual ? ' · manual' : ''}`;
+      const a = document.createElement('span'); a.className = 'c'; a.textContent = `${i + 1}ª peça`;
+      const b = document.createElement('span'); b.className = 'm'; b.textContent = `${hora(r.hora)}${r.manual ? ' · manual' : ''}`;
       li.append(a, b); lista.append(li);
     }
     gravar('cangas.registro', registro);
-    if (piscar) for (const id of ['cTotal', piscar === 'certa' ? 'cCerta' : 'cErrada']) {
-      const el = $(id); el.classList.remove('pisca'); void el.offsetWidth; el.classList.add('pisca');
-    }
+    if (piscar) { const el = $('cCerta'); el.classList.remove('pisca'); void el.offsetWidth; el.classList.add('pisca'); }
   }
 
   // ---------- Som e vibração ----------
   let audio = null;
   function liberarSom() { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch {} }
-  function bip(tipo) {
-    try { navigator.vibrate && navigator.vibrate(tipo === 'certa' ? 80 : [60, 60, 60]); } catch {}
+  function bip(notas) {
+    try { navigator.vibrate && navigator.vibrate(80); } catch {}
     if (!audio) return;
-    const notas = tipo === 'certa' ? [880, 1320] : tipo === 'errada' ? [300, 220] : [500];
     notas.forEach((f, i) => {
       const o = audio.createOscillator(), g = audio.createGain(), t0 = audio.currentTime + i * 0.12;
       o.frequency.value = f; o.type = 'sine';
@@ -239,20 +235,12 @@ button:disabled { opacity: .5; cursor: not-allowed }
       o.connect(g).connect(audio.destination); o.start(t0); o.stop(t0 + 0.12);
     });
   }
-
-  function adicionar(tipo, manual) {
-    registro.push({ tipo, hora: Date.now(), manual: !!manual });
-    bip(tipo); mostrar(tipo);
-  }
-  function desfazerUltimaAutomatica(tipo) {
-    for (let i = registro.length - 1; i >= 0; i--) {
-      if (registro[i].tipo === tipo && !registro[i].manual) { registro.splice(i, 1); bip('desfeita'); mostrar(); return; }
-    }
+  function adicionar(manual) { registro.push({ hora: Date.now(), manual: !!manual }); bip([880, 1320]); mostrar(true); }
+  function desfazerUltimaAutomatica() {
+    for (let i = registro.length - 1; i >= 0; i--) if (!registro[i].manual) { registro.splice(i, 1); bip([500]); mostrar(); return; }
   }
 
-  // ---------- Botões do placar ----------
-  $('maisCerta').onclick = () => { liberarSom(); adicionar('certa', true); };
-  $('maisErrada').onclick = () => { liberarSom(); adicionar('errada', true); };
+  $('mais').onclick = () => { liberarSom(); adicionar(true); };
   $('desfazer').onclick = () => { if (registro.length) { registro.pop(); mostrar(); } };
   let zerarArmado = null;
   $('zerar').onclick = () => {
@@ -266,30 +254,36 @@ button:disabled { opacity: .5; cursor: not-allowed }
     registro = []; mostrar();
   };
   $('copiar').onclick = () => {
-    const t = totais(), hoje = new Date().toLocaleDateString('pt-BR');
-    const texto = `Cangas ${hoje}\nTotal: ${t.total}\nCertas: ${t.certas}\nErradas: ${t.erradas}`;
+    const texto = `Cangas certas ${new Date().toLocaleDateString('pt-BR')}: ${registro.length}`;
     const ok = () => { $('copiar').textContent = '✅ Copiado'; setTimeout(() => ($('copiar').textContent = '📋 Copiar resumo'), 2000); };
-    try { navigator.clipboard.writeText(texto).then(ok, () => aviso('Não deu para copiar. Resumo: ' + texto.replace(/\n/g, ' · '))); }
-    catch { aviso('Não deu para copiar. Resumo: ' + texto.replace(/\n/g, ' · ')); }
+    try { navigator.clipboard.writeText(texto).then(ok, () => aviso('Não deu para copiar. Resumo: ' + texto)); }
+    catch { aviso('Não deu para copiar. Resumo: ' + texto); }
   };
 
   function aviso(msg) { const a = $('aviso'); a.textContent = msg; a.hidden = !msg; }
   function estado(html) { $('estado').innerHTML = html; }
-
-  // ---------- Fontes de imagem ----------
-  // A câmera ligada só mostra a imagem. Contar depende do botão "Começar a contar".
-  let contando = false, regressiva = null;
   function selo(texto, tipo) { const el = $('selo'); el.textContent = texto; el.className = 'selo' + (tipo ? ' ' + tipo : ''); }
+
+  // ---------- Modos: ajuste, pausado, contando ----------
+  let rodando = false;        // câmera ligada
+  let ajustando = false;      // marcando o suporte
+  let contando = false, regressiva = null;
+
   function mostrarBotaoContar() {
     const b = $('btnContar');
-    b.disabled = !rodando;
+    b.disabled = !rodando || ajustando || !suporte;
     b.classList.toggle('pausar', contando || regressiva !== null);
     if (regressiva === null) b.textContent = contando ? '⏸ Pausar contagem' : '▶ Começar a contar';
+  }
+  function falarPausado() {
+    selo('Pausado');
+    estado(suporte ? 'Câmera ligada. Toque em <b>Começar a contar</b> quando o celular estiver no lugar.'
+      : 'Marque onde fica o suporte antes de começar.');
   }
   function pararContagem() {
     if (regressiva !== null) { clearInterval(regressiva); regressiva = null; }
     contando = false;
-    selo('Pausado'); if (rodando) estado('Câmera ligada. Toque em <b>Começar a contar</b> quando o celular estiver no lugar.');
+    if (rodando) falarPausado();
     mostrarBotaoContar();
   }
   function iniciarContagem() {
@@ -299,8 +293,8 @@ button:disabled { opacity: .5; cursor: not-allowed }
     const tique = () => {
       if (falta === 0) {
         clearInterval(regressiva); regressiva = null;
-        contador = criarContador({ areas }); ultimaAmostra = -Infinity;
-        contando = true; selo('Contando', 'on'); estado('Contando. Não mexa no celular.');
+        contador = criarContador({ suporte }); ultimaAmostra = -Infinity;
+        contando = true; selo('Contando', 'on'); estado('Contando as peças penduradas no suporte. Não mexa no celular.');
         mostrarBotaoContar(); return;
       }
       b.textContent = `Começa em ${falta}… (toque para cancelar)`; selo('Preparando'); falta--;
@@ -309,22 +303,43 @@ button:disabled { opacity: .5; cursor: not-allowed }
   }
   $('btnContar').onclick = () => { if (contando || regressiva !== null) pararContagem(); else iniciarContagem(); };
 
-  let fluxo = null, frente = ler('cangas.frente', true), rodando = false, ultimaAmostra = -Infinity;
+  function abrirAjuste() {
+    pararContagem();
+    ajustando = true; novo = null;
+    $('ajuste').hidden = false; $('placar').hidden = true; palco.classList.add('marcando');
+    $('btnMarcar').hidden = true;
+    $('btnPronto').disabled = !suporte;
+    $('teste').textContent = '';
+    contador = suporte ? criarContador({ suporte }) : null; ultimaAmostra = -Infinity;
+    selo('Ajuste', 'marcar'); estado('Desenhe o retângulo do suporte na imagem.');
+    mostrarBotaoContar();
+  }
+  function fecharAjuste() {
+    ajustando = false;
+    $('ajuste').hidden = true; $('placar').hidden = false; palco.classList.remove('marcando');
+    $('btnMarcar').hidden = !rodando;
+    falarPausado(); mostrarBotaoContar();
+  }
+  $('btnMarcar').onclick = abrirAjuste;
+  $('btnPronto').onclick = () => { if (suporte) { gravar('cangas.suporte', suporte); fecharAjuste(); } };
+  $('btnRefazer').onclick = () => {
+    suporte = null; $('btnPronto').disabled = true; $('teste').textContent = ''; contador = null;
+    estado('Desenhe o retângulo do suporte na imagem.');
+  };
+
+  // ---------- Câmera ----------
+  let fluxo = null, frente = ler('cangas.frente', true), ultimaAmostra = -Infinity;
   let travaTela = null;
-  // Giro da imagem em graus. null = automático: imagem em pé é deitada (90°).
-  let giro = ler('cangas.giro', null);
-  const tela = $('tela'), ctxTela = tela.getContext('2d');
+  let giro = ler('cangas.giro', null); // graus; null = automático (imagem em pé é deitada)
 
   function giroAtual() {
     if (giro !== null) return giro;
     return video.videoHeight > video.videoWidth ? 90 : 0;
   }
-  // Tamanho da imagem já girada.
   function tamanhoGirado() {
-    const g = giroAtual(), vw = video.videoWidth, vh = video.videoHeight;
-    return g % 180 ? { w: vh, h: vw } : { w: vw, h: vh };
+    const vw = video.videoWidth, vh = video.videoHeight;
+    return giroAtual() % 180 ? { w: vh, h: vw } : { w: vw, h: vh };
   }
-  // Desenha o quadro atual da câmera girado, ocupando o canvas inteiro.
   function desenharGirado(ctx, w, h) {
     const g = giroAtual();
     ctx.save();
@@ -360,7 +375,7 @@ button:disabled { opacity: .5; cursor: not-allowed }
     if (viva) manterTelaAcesa(); else ligarCamera();
   });
 
-  function pararTudo() {
+  function pararCamera() {
     rodando = false;
     if (fluxo) { fluxo.getTracks().forEach((t) => t.stop()); fluxo = null; }
     video.pause(); video.srcObject = null;
@@ -368,10 +383,10 @@ button:disabled { opacity: .5; cursor: not-allowed }
 
   async function ligarCamera() {
     liberarSom(); aviso('');
-    pararTudo();
+    pararCamera();
     if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       aviso(`Este navegador não libera a câmera aqui. Abra no Chrome o endereço ${ENDERECO} (não pela página do GitHub nem por link dentro do WhatsApp/Instagram).`);
-      estado('Câmera indisponível.');
+      selo('Parado'); estado('Câmera indisponível.');
       return;
     }
     const pedidos = [
@@ -394,23 +409,19 @@ button:disabled { opacity: .5; cursor: not-allowed }
         AbortError: 'A câmera não respondeu. Feche outros apps que usam a câmera e tente de novo.',
       };
       aviso((motivos[erro.name] || 'A câmera não abriu.') + ` (código: ${erro.name || 'desconhecido'})`);
-      estado('Câmera indisponível.');
+      selo('Parado'); estado('Câmera indisponível.');
       return;
     }
     video.srcObject = fluxo; await video.play().catch(() => {});
     $('btnTrocar').hidden = false; $('btnGirar').hidden = false; $('btnCamera').textContent = '📷 Religar câmera';
-    comecar();
-    manterTelaAcesa();
-  }
-
-  function comecar() {
-    contador = criarContador({ areas });
-    ultimaAmostra = -Infinity;
     $('vazio').hidden = true;
-    rodando = true;
-    if (contando) { selo('Contando', 'on'); estado('Contando. Não mexa no celular.'); }
-    else { selo('Pausado'); estado(`Câmera ${frente ? 'da frente' : 'de trás'} ligada. Arrume o celular e toque em <b>Começar a contar</b>.`); }
+    rodando = true; ultimaAmostra = -Infinity;
+    if (contando) { contador = criarContador({ suporte }); selo('Contando', 'on'); estado('Contando as peças penduradas no suporte. Não mexa no celular.'); }
+    else if (!suporte) abrirAjuste();   // primeira vez: começa pelo ajuste
+    else if (ajustando) contador = criarContador({ suporte });
+    else { $('btnMarcar').hidden = false; falarPausado(); }
     mostrarBotaoContar();
+    manterTelaAcesa();
     agendar();
   }
 
@@ -426,7 +437,8 @@ button:disabled { opacity: .5; cursor: not-allowed }
     if (!rodando) return;
     const t = performance.now();
     mostrarImagem();
-    if (contando && !editando && t - ultimaAmostra >= AMOSTRA_MS - 5 && video.videoWidth) {
+    const analisar = contador && (contando || ajustando) && !arrasto;
+    if (analisar && t - ultimaAmostra >= AMOSTRA_MS - 5 && video.videoWidth) {
       ultimaAmostra = t;
       const g = tamanhoGirado();
       const w = LARGURA, h = Math.round((LARGURA * g.h) / g.w);
@@ -435,17 +447,20 @@ button:disabled { opacity: .5; cursor: not-allowed }
       const px = ctxPequeno.getImageData(0, 0, w, h).data, cinza = new Uint8Array(w * h);
       for (let i = 0, j = 0; j < cinza.length; i += 4, j++) cinza[j] = (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8;
       for (const e of contador.processar(cinza, w, h, t)) {
-        if (e.tipo === 'certa' || e.tipo === 'errada') adicionar(e.tipo, false);
-        else if (e.tipo === 'certa-desfeita') desfazerUltimaAutomatica('certa');
+        if (ajustando) {
+          // Durante o ajuste, só mostra que percebeu; não conta.
+          if (e.tipo === 'certa') { $('teste').textContent = `✓ Peça percebida às ${hora(Date.now())}. O suporte está bem marcado.`; bip([660, 990]); }
+          else if (e.tipo === 'certa-desfeita') $('teste').textContent = 'Era só alguém na frente do suporte; não contaria.';
+        } else if (e.tipo === 'certa') adicionar(false);
+        else if (e.tipo === 'certa-desfeita') desfazerUltimaAutomatica();
       }
-      const mexendo = contador.leitura.cameraMexendo;
+      $('mSup').style.width = Math.min(100, contador.leitura.movSuporte * 200) + '%';
+      const mexendo = contando && contador.leitura.cameraMexendo;
       if (mexendo !== avisouMexendo) {
         avisouMexendo = mexendo;
         if (mexendo) { selo('Celular mexendo', 'alerta'); estado('O celular se mexeu. A contagem volta sozinha quando a imagem ficar parada.'); }
-        else { selo('Contando', 'on'); estado('Contando. Não mexa no celular.'); }
+        else if (contando) { selo('Contando', 'on'); estado('Contando as peças penduradas no suporte. Não mexa no celular.'); }
       }
-      $('mSup').style.width = Math.min(100, contador.leitura.movSuporte * 200) + '%';
-      $('mSai').style.width = Math.min(100, (contador.leitura.movSaida / contador.config.saidaMov) * 100) + '%';
     }
     agendar();
   }
@@ -454,50 +469,48 @@ button:disabled { opacity: .5; cursor: not-allowed }
   $('btnTrocar').onclick = () => { frente = !frente; gravar('cangas.frente', frente); ligarCamera(); };
   $('btnGirar').onclick = () => {
     giro = (giroAtual() + 90) % 360; gravar('cangas.giro', giro);
-    contador = criarContador({ areas }); // imagem nova: recomeça a referência do suporte
+    if (contador) contador = criarContador({ suporte }); // imagem nova: recomeça a referência do suporte
   };
 
   // Tela cheia com o celular deitado (Android). Onde não existir, o celular gira sozinho
   // se a rotação automática estiver ligada.
-  async function deitar() {
+  $('btnDeitar').onclick = async () => {
+    if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
     try {
-      if (!document.fullscreenElement) await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      await document.documentElement.requestFullscreen({ navigationUI: 'hide' });
       await screen.orientation.lock('landscape');
       $('btnDeitar').textContent = '⛶ Sair da tela cheia';
     } catch {
       aviso('Este celular não deixou virar sozinho. Ligue a "Rotação automática" do celular e deite o aparelho.');
     }
-  }
-  $('btnDeitar').onclick = () => {
-    if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
-    deitar();
   };
   document.addEventListener('fullscreenchange', () => {
     if (!document.fullscreenElement) $('btnDeitar').textContent = '⛶ Tela cheia deitada';
   });
 
-  // ---------- Áreas: desenhar e ajustar ----------
-  const CORES = { suporte: '--certa', saida: '--errada', ignorar: '--ignorar' };
-  const NOMES = { suporte: 'SUPORTE', saida: 'SAÍDA ERRADOS', ignorar: 'IGNORAR' };
-  let editando = false, arrasto = null;
-
-  function cor(nome) { return getComputedStyle(document.documentElement).getPropertyValue(CORES[nome]).trim(); }
+  // ---------- Desenhar o suporte ----------
+  let arrasto = null, novo = null;
+  function cor(token) { return getComputedStyle(document.documentElement).getPropertyValue(token).trim(); }
 
   function desenhar() {
     const r = palco.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
     if (desenho.width !== Math.round(r.width * dpr)) { desenho.width = Math.round(r.width * dpr); desenho.height = Math.round(r.height * dpr); }
     const W = desenho.width, H = desenho.height;
     ctxDesenho.clearRect(0, 0, W, H);
-    ctxDesenho.font = `700 ${Math.round(12 * dpr)}px ${getComputedStyle(document.body).fontFamily}`;
-    for (const nome of ['ignorar', 'saida', 'suporte']) {
-      const a = areas[nome], x = a.x * W, y = a.y * H, w = a.w * W, h = a.h * H, c = cor(nome);
-      ctxDesenho.fillStyle = c + '33'; ctxDesenho.fillRect(x, y, w, h);
-      ctxDesenho.lineWidth = 2 * dpr; ctxDesenho.strokeStyle = c;
-      ctxDesenho.setLineDash(nome === 'ignorar' ? [6 * dpr, 4 * dpr] : []); ctxDesenho.strokeRect(x, y, w, h);
-      ctxDesenho.setLineDash([]);
-      ctxDesenho.fillStyle = c; ctxDesenho.fillRect(x, y, ctxDesenho.measureText(NOMES[nome]).width + 10 * dpr, 18 * dpr);
-      ctxDesenho.fillStyle = '#fff'; ctxDesenho.fillText(NOMES[nome], x + 5 * dpr, y + 13 * dpr);
-      if (editando) { ctxDesenho.fillStyle = c; ctxDesenho.fillRect(x + w - 16 * dpr, y + h - 16 * dpr, 16 * dpr, 16 * dpr); }
+    const a = novo || suporte;
+    if (a && rodando) {
+      const x = a.x * W, y = a.y * H, w = a.w * W, h = a.h * H, c = cor('--certa');
+      if (ajustando) { // escurece o resto para destacar o suporte
+        ctxDesenho.fillStyle = 'rgba(0,0,0,.45)';
+        ctxDesenho.fillRect(0, 0, W, y); ctxDesenho.fillRect(0, y + h, W, H - y - h);
+        ctxDesenho.fillRect(0, y, x, h); ctxDesenho.fillRect(x + w, y, W - x - w, h);
+      }
+      ctxDesenho.lineWidth = 3 * dpr; ctxDesenho.strokeStyle = c; ctxDesenho.strokeRect(x, y, w, h);
+      ctxDesenho.font = `700 ${Math.round(13 * dpr)}px ${getComputedStyle(document.body).fontFamily}`;
+      const rotulo = 'SUPORTE', ty = y > 22 * dpr ? y - 20 * dpr : y;
+      ctxDesenho.fillStyle = c; ctxDesenho.fillRect(x, ty, ctxDesenho.measureText(rotulo).width + 12 * dpr, 20 * dpr);
+      ctxDesenho.fillStyle = '#fff'; ctxDesenho.fillText(rotulo, x + 6 * dpr, ty + 15 * dpr);
+      if (ajustando && !novo) { ctxDesenho.fillStyle = c; ctxDesenho.fillRect(x + w - 18 * dpr, y + h - 18 * dpr, 18 * dpr, 18 * dpr); }
     }
     requestAnimationFrame(desenhar);
   }
@@ -505,41 +518,50 @@ button:disabled { opacity: .5; cursor: not-allowed }
 
   function posicao(ev) {
     const r = palco.getBoundingClientRect();
-    return { x: (ev.clientX - r.left) / r.width, y: (ev.clientY - r.top) / r.height, r };
+    const lim = (v) => Math.min(1, Math.max(0, v));
+    return { x: lim((ev.clientX - r.left) / r.width), y: lim((ev.clientY - r.top) / r.height), r };
   }
   palco.addEventListener('pointerdown', (ev) => {
-    if (!editando) return;
-    const p = posicao(ev), canto = 22 / p.r.width;
-    for (const nome of ['suporte', 'saida', 'ignorar']) {
-      const a = areas[nome];
+    if (!ajustando || !rodando) return;
+    const p = posicao(ev);
+    palco.setPointerCapture(ev.pointerId); ev.preventDefault();
+    if (suporte) {
+      const a = suporte, canto = 26 / p.r.width;
       const noCanto = Math.abs(p.x - (a.x + a.w)) < canto && Math.abs(p.y - (a.y + a.h)) < canto * (p.r.width / p.r.height);
       const dentro = p.x >= a.x && p.x <= a.x + a.w && p.y >= a.y && p.y <= a.y + a.h;
-      if (noCanto || dentro) {
-        arrasto = { nome, modo: noCanto ? 'tamanho' : 'mover', inicio: p, original: { ...a } };
-        palco.setPointerCapture(ev.pointerId); ev.preventDefault(); return;
-      }
+      if (noCanto || dentro) { arrasto = { modo: noCanto ? 'tamanho' : 'mover', inicio: p, original: { ...a } }; return; }
     }
+    arrasto = { modo: 'novo', inicio: p }; // fora do retângulo: desenha um novo
+    novo = { x: p.x, y: p.y, w: 0, h: 0 };
   });
   palco.addEventListener('pointermove', (ev) => {
     if (!arrasto) return;
-    const p = posicao(ev), dx = p.x - arrasto.inicio.x, dy = p.y - arrasto.inicio.y, o = arrasto.original, a = areas[arrasto.nome];
+    const p = posicao(ev), i = arrasto.inicio;
     const lim = (v, min, max) => Math.min(max, Math.max(min, v));
-    if (arrasto.modo === 'mover') { a.x = lim(o.x + dx, 0, 1 - o.w); a.y = lim(o.y + dy, 0, 1 - o.h); }
-    else { a.w = lim(o.w + dx, 0.04, 1 - o.x); a.h = lim(o.h + dy, 0.04, 1 - o.y); }
+    if (arrasto.modo === 'novo') {
+      novo = { x: Math.min(i.x, p.x), y: Math.min(i.y, p.y), w: Math.abs(p.x - i.x), h: Math.abs(p.y - i.y) };
+      return;
+    }
+    const dx = p.x - i.x, dy = p.y - i.y, o = arrasto.original;
+    if (arrasto.modo === 'mover') suporte = { ...o, x: lim(o.x + dx, 0, 1 - o.w), y: lim(o.y + dy, 0, 1 - o.h) };
+    else suporte = { ...o, w: lim(o.w + dx, 0.05, 1 - o.x), h: lim(o.h + dy, 0.05, 1 - o.y) };
   });
-  palco.addEventListener('pointerup', () => {
+  function soltar() {
     if (!arrasto) return;
-    arrasto = null; gravar('cangas.areas', areas);
-    contador = criarContador({ areas });
-  });
-
-  $('btnAreas').onclick = () => {
-    editando = !editando;
-    $('btnAreas').classList.toggle('ativo', editando);
-    if (!editando) contador = criarContador({ areas }); // recomeça com a imagem atual
-    $('dicaAreas').hidden = !editando; $('medidores').hidden = !editando; $('btnPadrao').hidden = !editando;
-  };
-  $('btnPadrao').onclick = () => { areas = structuredClone(PADRAO.areas); gravar('cangas.areas', areas); contador = criarContador({ areas }); };
+    if (arrasto.modo === 'novo') {
+      if (novo && novo.w >= 0.05 && novo.h >= 0.05) suporte = novo;
+      else if (!suporte) estado('O retângulo ficou pequeno demais. Arraste o dedo mais longe para desenhar.');
+      novo = null;
+    }
+    arrasto = null;
+    if (suporte) {
+      $('btnPronto').disabled = false; $('teste').textContent = '';
+      estado('Suporte marcado. Pendure uma peça para testar ou toque em <b>Pronto</b>.');
+      contador = criarContador({ suporte }); ultimaAmostra = -Infinity;
+    }
+  }
+  palco.addEventListener('pointerup', soltar);
+  palco.addEventListener('pointercancel', soltar);
 
   $('versao').textContent = '· versão ' + VERSAO;
   mostrar();
