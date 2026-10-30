@@ -98,6 +98,12 @@ button.ativo { background: var(--vinho); border-color: var(--vinho); color: var(
 .acoes .errada { color: var(--errada) }
 .acoes .largo { grid-column: 1 / -1; justify-content: center }
 button.perigo { color: var(--errada) }
+button.iniciar { grid-column: 1 / -1; justify-content: center; background: var(--certa); border-color: var(--certa); color: var(--painel); font-size: 1.15rem; min-height: 52px }
+button.iniciar.pausar { background: var(--painel); color: var(--fg); border-color: var(--vinho) }
+button:disabled { opacity: .5; cursor: not-allowed }
+.selo { display: inline-block; font-size: .78rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 2px 8px; border-radius: 999px; background: var(--linha); color: var(--suave) }
+.selo.on { background: var(--certa); color: var(--painel) }
+.selo.alerta { background: var(--errada); color: var(--painel) }
 
 .registro { margin-top: 14px; background: var(--painel); border: 1.5px solid var(--linha); border-radius: 10px; padding: 10px 14px }
 .registro h2 { font: 700 1rem var(--numero); letter-spacing: .06em; text-transform: uppercase; margin: 0 0 6px; color: var(--suave) }
@@ -116,7 +122,7 @@ button.perigo { color: var(--errada) }
 
 <header>
   <h1>Contador de <span>Cangas</span></h1>
-  <div class="estado"><span id="estado">Toque em <b>Ligar câmera</b> para começar a contar.</span> <small id="versao"></small></div>
+  <div class="estado"><span class="selo" id="selo">Parado</span> <span id="estado">Toque em <b>Ligar câmera</b> e arrume o celular no lugar.</span> <small id="versao"></small></div>
 </header>
 
 <div class="grade">
@@ -153,6 +159,7 @@ button.perigo { color: var(--errada) }
       <div class="cont errada" id="cErrada"><small>Erradas</small><output id="nErrada">0</output></div>
     </div>
     <div class="acoes">
+      <button id="btnContar" class="iniciar" type="button" disabled>▶ Começar a contar</button>
       <button id="maisCerta" class="certa" type="button">+1 Certa</button>
       <button id="maisErrada" class="errada" type="button">+1 Errada</button>
       <button id="desfazer" class="largo" type="button">↶ Desfazer a última</button>
@@ -177,7 +184,7 @@ button.perigo { color: var(--errada) }
   const ctxPequeno = pequeno.getContext('2d', { willReadFrequently: true });
   const LARGURA = 160, AMOSTRA_MS = 100;
   const ENDERECO = 'https://ph771.github.io/Contador-de-tecidos-/';
-  const VERSAO = '3';
+  const VERSAO = '4';
 
   // ---------- Guardar no celular ----------
   function ler(chave, padrao) {
@@ -270,6 +277,38 @@ button.perigo { color: var(--errada) }
   function estado(html) { $('estado').innerHTML = html; }
 
   // ---------- Fontes de imagem ----------
+  // A câmera ligada só mostra a imagem. Contar depende do botão "Começar a contar".
+  let contando = false, regressiva = null;
+  function selo(texto, tipo) { const el = $('selo'); el.textContent = texto; el.className = 'selo' + (tipo ? ' ' + tipo : ''); }
+  function mostrarBotaoContar() {
+    const b = $('btnContar');
+    b.disabled = !rodando;
+    b.classList.toggle('pausar', contando || regressiva !== null);
+    if (regressiva === null) b.textContent = contando ? '⏸ Pausar contagem' : '▶ Começar a contar';
+  }
+  function pararContagem() {
+    if (regressiva !== null) { clearInterval(regressiva); regressiva = null; }
+    contando = false;
+    selo('Pausado'); if (rodando) estado('Câmera ligada. Toque em <b>Começar a contar</b> quando o celular estiver no lugar.');
+    mostrarBotaoContar();
+  }
+  function iniciarContagem() {
+    liberarSom();
+    let falta = 3;
+    const b = $('btnContar');
+    const tique = () => {
+      if (falta === 0) {
+        clearInterval(regressiva); regressiva = null;
+        contador = criarContador({ areas }); ultimaAmostra = -Infinity;
+        contando = true; selo('Contando', 'on'); estado('Contando. Não mexa no celular.');
+        mostrarBotaoContar(); return;
+      }
+      b.textContent = `Começa em ${falta}… (toque para cancelar)`; selo('Preparando'); falta--;
+    };
+    regressiva = setInterval(tique, 1000); tique(); mostrarBotaoContar();
+  }
+  $('btnContar').onclick = () => { if (contando || regressiva !== null) pararContagem(); else iniciarContagem(); };
+
   let fluxo = null, frente = ler('cangas.frente', true), rodando = false, ultimaAmostra = -Infinity;
   let travaTela = null;
   // Giro da imagem em graus. null = automático: imagem em pé é deitada (90°).
@@ -360,15 +399,18 @@ button.perigo { color: var(--errada) }
     }
     video.srcObject = fluxo; await video.play().catch(() => {});
     $('btnTrocar').hidden = false; $('btnGirar').hidden = false; $('btnCamera').textContent = '📷 Religar câmera';
-    comecar(`Contando pela câmera ${frente ? 'da frente' : 'de trás'}.`);
+    comecar();
     manterTelaAcesa();
   }
 
-  function comecar(texto) {
+  function comecar() {
     contador = criarContador({ areas });
     ultimaAmostra = -Infinity;
     $('vazio').hidden = true;
-    rodando = true; estado(texto);
+    rodando = true;
+    if (contando) { selo('Contando', 'on'); estado('Contando. Não mexa no celular.'); }
+    else { selo('Pausado'); estado(`Câmera ${frente ? 'da frente' : 'de trás'} ligada. Arrume o celular e toque em <b>Começar a contar</b>.`); }
+    mostrarBotaoContar();
     agendar();
   }
 
@@ -378,11 +420,13 @@ button.perigo { color: var(--errada) }
     else requestAnimationFrame(passo);
   }
 
+  let avisouMexendo = false;
+  window.contadorAtual = () => contador; // para diagnóstico
   function passo() {
     if (!rodando) return;
     const t = performance.now();
     mostrarImagem();
-    if (t - ultimaAmostra >= AMOSTRA_MS - 5 && video.videoWidth) {
+    if (contando && !editando && t - ultimaAmostra >= AMOSTRA_MS - 5 && video.videoWidth) {
       ultimaAmostra = t;
       const g = tamanhoGirado();
       const w = LARGURA, h = Math.round((LARGURA * g.h) / g.w);
@@ -393,6 +437,12 @@ button.perigo { color: var(--errada) }
       for (const e of contador.processar(cinza, w, h, t)) {
         if (e.tipo === 'certa' || e.tipo === 'errada') adicionar(e.tipo, false);
         else if (e.tipo === 'certa-desfeita') desfazerUltimaAutomatica('certa');
+      }
+      const mexendo = contador.leitura.cameraMexendo;
+      if (mexendo !== avisouMexendo) {
+        avisouMexendo = mexendo;
+        if (mexendo) { selo('Celular mexendo', 'alerta'); estado('O celular se mexeu. A contagem volta sozinha quando a imagem ficar parada.'); }
+        else { selo('Contando', 'on'); estado('Contando. Não mexa no celular.'); }
       }
       $('mSup').style.width = Math.min(100, contador.leitura.movSuporte * 200) + '%';
       $('mSai').style.width = Math.min(100, (contador.leitura.movSaida / contador.config.saidaMov) * 100) + '%';
@@ -486,6 +536,7 @@ button.perigo { color: var(--errada) }
   $('btnAreas').onclick = () => {
     editando = !editando;
     $('btnAreas').classList.toggle('ativo', editando);
+    if (!editando) contador = criarContador({ areas }); // recomeça com a imagem atual
     $('dicaAreas').hidden = !editando; $('medidores').hidden = !editando; $('btnPadrao').hidden = !editando;
   };
   $('btnPadrao').onclick = () => { areas = structuredClone(PADRAO.areas); gravar('cangas.areas', areas); contador = criarContador({ areas }); };
