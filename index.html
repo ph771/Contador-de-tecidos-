@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="pt-BR">
+<head><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head>
+<body>
+<meta charset="utf-8">
+<title>Contador de Cangas</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap">
+<style>
+/* Layout: imagem da câmera com as áreas à esquerda, placar grande à direita; empilha no celular em pé. */
+:root {
+  --bg: #f6f2ec;        /* tecido cru */
+  --painel: #ffffff;
+  --fg: #2a2026;
+  --suave: #75676f;
+  --linha: #e3dad3;
+  --vinho: #7d3f5c;     /* cor da estampa */
+  --certa: #1f7a4d;
+  --errada: #c0392b;
+  --ignorar: #5d6470;
+  --numero: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --texto: "Atkinson Hyperlegible", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #1b1619; --painel: #262024; --fg: #f1e9ec; --suave: #ab9ca4; --linha: #3a3237;
+  --vinho: #d48aad; --certa: #4cc489; --errada: #ff7a6b; --ignorar: #9aa2ad; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #1b1619; --painel: #262024; --fg: #f1e9ec; --suave: #ab9ca4; --linha: #3a3237;
+  --vinho: #d48aad; --certa: #4cc489; --errada: #ff7a6b; --ignorar: #9aa2ad; color-scheme: dark }
+
+* { box-sizing: border-box }
+[hidden] { display: none !important }
+body {
+  background: var(--bg); color: var(--fg); font: 16px/1.45 var(--texto);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 12px 24px;
+}
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 12px }
+h1 { font: 700 1.6rem/1 var(--numero); letter-spacing: .02em; margin: 0; text-wrap: balance }
+h1 span { color: var(--vinho) }
+.estado { font-size: .9rem; color: var(--suave) }
+.estado b { color: var(--fg) }
+
+.grade { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start }
+@media (max-width: 760px) { .grade { grid-template-columns: minmax(0, 1fr) } }
+
+.palco { position: relative; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; background: #111; border-radius: 10px; overflow: hidden; touch-action: none }
+.palco video, .palco canvas { position: absolute; inset: 0; width: 100%; height: 100% }
+.palco video { object-fit: fill }
+.vazio { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 6px; padding: 16px; color: #e9e1e5; font-size: .95rem }
+.vazio strong { font: 700 1.3rem var(--numero); letter-spacing: .03em }
+
+.fontes { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px }
+button {
+  font: 700 1rem var(--texto); color: var(--fg); background: var(--painel);
+  border: 1.5px solid var(--linha); border-radius: 8px; padding: 10px 14px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+}
+button:hover { border-color: var(--vinho) }
+button:focus-visible { outline: 3px solid var(--vinho); outline-offset: 2px }
+button.ativo { background: var(--vinho); border-color: var(--vinho); color: var(--bg) }
+.aviso { margin: 8px 0 0; font-size: .9rem; color: var(--errada) }
+.dica { margin: 8px 0 0; font-size: .88rem; color: var(--suave) }
+
+.placar { display: grid; grid-template-columns: 1fr 1fr; gap: 10px }
+.cont { background: var(--painel); border: 1.5px solid var(--linha); border-radius: 10px; padding: 10px 14px 6px }
+.cont small { display: block; font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--suave) }
+.cont output { display: block; font: 700 clamp(3.2rem, 9vw, 5.5rem)/1 var(--numero); font-variant-numeric: tabular-nums }
+.cont.total { grid-column: 1 / -1; border-color: var(--vinho) }
+.cont.total output { color: var(--vinho); font-size: clamp(4rem, 12vw, 7rem) }
+.cont.certa output { color: var(--certa) }
+.cont.errada output { color: var(--errada) }
+.cont.pisca { animation: pisca .6s ease-out }
+@keyframes pisca { from { background: color-mix(in srgb, var(--vinho) 22%, var(--painel)) } }
+@media (prefers-reduced-motion: reduce) { .cont.pisca { animation: none } }
+
+.acoes { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px }
+.acoes .certa { color: var(--certa) }
+.acoes .errada { color: var(--errada) }
+.acoes .largo { grid-column: 1 / -1; justify-content: center }
+button.perigo { color: var(--errada) }
+
+.registro { margin-top: 14px; background: var(--painel); border: 1.5px solid var(--linha); border-radius: 10px; padding: 10px 14px }
+.registro h2 { font: 700 1rem var(--numero); letter-spacing: .06em; text-transform: uppercase; margin: 0 0 6px; color: var(--suave) }
+.registro ol { list-style: none; margin: 0; padding: 0; max-height: 9.5rem; overflow-y: auto; font-variant-numeric: tabular-nums }
+.registro li { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; border-top: 1px solid var(--linha); font-size: .92rem }
+.registro li:first-child { border-top: 0 }
+.registro .c { color: var(--certa); font-weight: 700 }
+.registro .e { color: var(--errada); font-weight: 700 }
+.registro .m { color: var(--suave); font-size: .8rem }
+
+.medidores { display: grid; gap: 4px; margin-top: 8px; font-size: .8rem; color: var(--suave) }
+.medidor { display: grid; grid-template-columns: 7.5rem 1fr; align-items: center; gap: 8px }
+.medidor i { display: block; height: 8px; background: var(--linha); border-radius: 4px; overflow: hidden }
+.medidor i b { display: block; height: 100%; width: 0; background: var(--vinho) }
+</style>
+
+<header>
+  <h1>Contador de <span>Cangas</span></h1>
+  <div class="estado" id="estado">Toque em <b>Ligar câmera</b> para começar a contar.</div>
+</header>
+
+<div class="grade">
+  <section>
+    <div class="palco" id="palco">
+      <video id="video" playsinline muted></video>
+      <canvas id="desenho"></canvas>
+      <div class="vazio" id="vazio">
+        <strong>Câmera desligada</strong>
+        <span>Verde: suporte (certas) · Vermelho: saída dos errados · Cinza: cortadeira (ignorar)</span>
+      </div>
+    </div>
+    <div class="fontes">
+      <button id="btnCamera" type="button">📷 Ligar câmera</button>
+      <button id="btnTrocar" type="button" hidden>🔄 Trocar câmera</button>
+      <button id="btnAreas" type="button">✏️ Ajustar áreas</button>
+      <button id="btnPadrao" type="button" hidden>↩️ Áreas padrão</button>
+    </div>
+    <p class="aviso" id="aviso" hidden></p>
+    <p class="dica" id="dicaAreas" hidden>Arraste cada retângulo para mover. Arraste o cantinho de baixo à direita para mudar o tamanho. Toque em "Ajustar áreas" de novo para terminar.</p>
+    <div class="medidores" id="medidores" hidden>
+      <div class="medidor"><span>Movimento suporte</span><i><b id="mSup"></b></i></div>
+      <div class="medidor"><span>Movimento saída</span><i><b id="mSai"></b></i></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="placar">
+      <div class="cont total" id="cTotal"><small>Total</small><output id="nTotal">0</output></div>
+      <div class="cont certa" id="cCerta"><small>Certas · suporte</small><output id="nCerta">0</output></div>
+      <div class="cont errada" id="cErrada"><small>Erradas</small><output id="nErrada">0</output></div>
+    </div>
+    <div class="acoes">
+      <button id="maisCerta" class="certa" type="button">+1 Certa</button>
+      <button id="maisErrada" class="errada" type="button">+1 Errada</button>
+      <button id="desfazer" class="largo" type="button">↶ Desfazer a última</button>
+      <button id="copiar" type="button">📋 Copiar resumo</button>
+      <button id="zerar" class="perigo" type="button">Zerar</button>
+    </div>
+    <div class="registro">
+      <h2>Registro</h2>
+      <ol id="lista"><li><span class="m">Nada contado ainda.</span></li></ol>
+    </div>
+  </section>
+</div>
+
+<script src="counter.js"></script>
+<script>
+(() => {
+  const { criarContador, PADRAO } = window.ContadorCangas;
+  const $ = (id) => document.getElementById(id);
+  const video = $('video'), desenho = $('desenho'), palco = $('palco');
+  const ctxDesenho = desenho.getContext('2d');
+  const pequeno = document.createElement('canvas');
+  const ctxPequeno = pequeno.getContext('2d', { willReadFrequently: true });
+  const LARGURA = 160, AMOSTRA_MS = 100;
+
+  // ---------- Guardar no celular ----------
+  function ler(chave, padrao) {
+    try { const v = localStorage.getItem(chave); return v ? JSON.parse(v) : padrao; } catch { return padrao; }
+  }
+  function gravar(chave, valor) { try { localStorage.setItem(chave, JSON.stringify(valor)); } catch {} }
+
+  let areas = ler('cangas.areas', structuredClone(PADRAO.areas));
+  let registro = ler('cangas.registro', []); // [{ tipo: 'certa'|'errada', hora, manual }]
+  let contador = criarContador({ areas });
+
+  // ---------- Placar ----------
+  function hora(ts) { return new Date(ts).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+  function totais() {
+    const certas = registro.filter((r) => r.tipo === 'certa').length;
+    const erradas = registro.length - certas;
+    return { certas, erradas, total: registro.length };
+  }
+  function mostrar(piscar) {
+    const t = totais();
+    $('nTotal').value = t.total; $('nCerta').value = t.certas; $('nErrada').value = t.erradas;
+    const lista = $('lista');
+    lista.replaceChildren();
+    if (!registro.length) {
+      const li = document.createElement('li'); li.innerHTML = '<span class="m">Nada contado ainda.</span>'; lista.append(li);
+    }
+    for (let i = registro.length - 1; i >= 0; i--) {
+      const r = registro[i], li = document.createElement('li');
+      const a = document.createElement('span'); a.className = r.tipo === 'certa' ? 'c' : 'e';
+      a.textContent = `${i + 1}. ${r.tipo === 'certa' ? 'Certa' : 'Errada'}`;
+      const b = document.createElement('span'); b.className = 'm';
+      b.textContent = `${hora(r.hora)}${r.manual ? ' · manual' : ''}`;
+      li.append(a, b); lista.append(li);
+    }
+    gravar('cangas.registro', registro);
+    if (piscar) for (const id of ['cTotal', piscar === 'certa' ? 'cCerta' : 'cErrada']) {
+      const el = $(id); el.classList.remove('pisca'); void el.offsetWidth; el.classList.add('pisca');
+    }
+  }
+
+  // ---------- Som e vibração ----------
+  let audio = null;
+  function liberarSom() { try { audio = audio || new (window.AudioContext || window.webkitAudioContext)(); audio.resume(); } catch {} }
+  function bip(tipo) {
+    try { navigator.vibrate && navigator.vibrate(tipo === 'certa' ? 80 : [60, 60, 60]); } catch {}
+    if (!audio) return;
+    const notas = tipo === 'certa' ? [880, 1320] : tipo === 'errada' ? [300, 220] : [500];
+    notas.forEach((f, i) => {
+      const o = audio.createOscillator(), g = audio.createGain(), t0 = audio.currentTime + i * 0.12;
+      o.frequency.value = f; o.type = 'sine';
+      g.gain.setValueAtTime(0.25, t0); g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.11);
+      o.connect(g).connect(audio.destination); o.start(t0); o.stop(t0 + 0.12);
+    });
+  }
+
+  function adicionar(tipo, manual) {
+    registro.push({ tipo, hora: Date.now(), manual: !!manual });
+    bip(tipo); mostrar(tipo);
+  }
+  function desfazerUltimaAutomatica(tipo) {
+    for (let i = registro.length - 1; i >= 0; i--) {
+      if (registro[i].tipo === tipo && !registro[i].manual) { registro.splice(i, 1); bip('desfeita'); mostrar(); return; }
+    }
+  }
+
+  // ---------- Botões do placar ----------
+  $('maisCerta').onclick = () => { liberarSom(); adicionar('certa', true); };
+  $('maisErrada').onclick = () => { liberarSom(); adicionar('errada', true); };
+  $('desfazer').onclick = () => { if (registro.length) { registro.pop(); mostrar(); } };
+  let zerarArmado = null;
+  $('zerar').onclick = () => {
+    const b = $('zerar');
+    if (!zerarArmado) {
+      b.textContent = 'Toque de novo para zerar';
+      zerarArmado = setTimeout(() => { zerarArmado = null; b.textContent = 'Zerar'; }, 3000);
+      return;
+    }
+    clearTimeout(zerarArmado); zerarArmado = null; b.textContent = 'Zerar';
+    registro = []; mostrar();
+  };
+  $('copiar').onclick = () => {
+    const t = totais(), hoje = new Date().toLocaleDateString('pt-BR');
+    const texto = `Cangas ${hoje}\nTotal: ${t.total}\nCertas: ${t.certas}\nErradas: ${t.erradas}`;
+    const ok = () => { $('copiar').textContent = '✅ Copiado'; setTimeout(() => ($('copiar').textContent = '📋 Copiar resumo'), 2000); };
+    try { navigator.clipboard.writeText(texto).then(ok, () => aviso('Não deu para copiar. Resumo: ' + texto.replace(/\n/g, ' · '))); }
+    catch { aviso('Não deu para copiar. Resumo: ' + texto.replace(/\n/g, ' · ')); }
+  };
+
+  function aviso(msg) { const a = $('aviso'); a.textContent = msg; a.hidden = !msg; }
+  function estado(html) { $('estado').innerHTML = html; }
+
+  // ---------- Fontes de imagem ----------
+  let fluxo = null, frente = ler('cangas.frente', true), rodando = false, ultimaAmostra = -Infinity;
+  let travaTela = null;
+
+  async function manterTelaAcesa() {
+    try { if ('wakeLock' in navigator && !travaTela) { travaTela = await navigator.wakeLock.request('screen'); travaTela.onrelease = () => (travaTela = null); } } catch {}
+  }
+  // Se o celular apagar a tela ou trocar de app, a câmera para; ao voltar, liga de novo sozinha.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !rodando) return;
+    const viva = fluxo && fluxo.getVideoTracks().some((t) => t.readyState === 'live');
+    if (viva) manterTelaAcesa(); else ligarCamera();
+  });
+
+  function pararTudo() {
+    rodando = false;
+    if (fluxo) { fluxo.getTracks().forEach((t) => t.stop()); fluxo = null; }
+    video.pause(); video.srcObject = null;
+  }
+
+  async function ligarCamera() {
+    liberarSom(); aviso('');
+    pararTudo();
+    try {
+      fluxo = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: frente ? 'user' : 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false,
+      });
+    } catch (e) {
+      aviso('A câmera não abriu. Toque em "Ligar câmera" e escolha "Permitir" quando o navegador perguntar. Se você negou antes, libere a câmera nas configurações do site (cadeado ao lado do endereço).');
+      estado('Câmera indisponível.');
+      return;
+    }
+    video.srcObject = fluxo; await video.play().catch(() => {});
+    $('btnTrocar').hidden = false; $('btnCamera').textContent = '📷 Religar câmera';
+    comecar(`Contando pela câmera ${frente ? 'da frente' : 'de trás'}.`);
+    manterTelaAcesa();
+  }
+
+  function comecar(texto) {
+    contador = criarContador({ areas });
+    ultimaAmostra = -Infinity;
+    $('vazio').hidden = true;
+    rodando = true; estado(texto);
+    agendar();
+  }
+
+  function agendar() {
+    if (!rodando) return;
+    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(passo);
+    else requestAnimationFrame(passo);
+  }
+
+  function passo() {
+    if (!rodando) return;
+    const t = performance.now();
+    if (t - ultimaAmostra >= AMOSTRA_MS - 5 && video.videoWidth) {
+      ultimaAmostra = t;
+      const w = LARGURA, h = Math.round((LARGURA * video.videoHeight) / video.videoWidth);
+      if (pequeno.width !== w || pequeno.height !== h) { pequeno.width = w; pequeno.height = h; }
+      ctxPequeno.drawImage(video, 0, 0, w, h);
+      const px = ctxPequeno.getImageData(0, 0, w, h).data, cinza = new Uint8Array(w * h);
+      for (let i = 0, j = 0; j < cinza.length; i += 4, j++) cinza[j] = (px[i] * 77 + px[i + 1] * 150 + px[i + 2] * 29) >> 8;
+      for (const e of contador.processar(cinza, w, h, t)) {
+        if (e.tipo === 'certa' || e.tipo === 'errada') adicionar(e.tipo, false);
+        else if (e.tipo === 'certa-desfeita') desfazerUltimaAutomatica('certa');
+      }
+      $('mSup').style.width = Math.min(100, contador.leitura.movSuporte * 200) + '%';
+      $('mSai').style.width = Math.min(100, (contador.leitura.movSaida / contador.config.saidaMov) * 100) + '%';
+    }
+    agendar();
+  }
+
+  $('btnCamera').onclick = ligarCamera;
+  $('btnTrocar').onclick = () => { frente = !frente; gravar('cangas.frente', frente); ligarCamera(); };
+
+  // ---------- Áreas: desenhar e ajustar ----------
+  const CORES = { suporte: '--certa', saida: '--errada', ignorar: '--ignorar' };
+  const NOMES = { suporte: 'SUPORTE', saida: 'SAÍDA ERRADOS', ignorar: 'IGNORAR' };
+  let editando = false, arrasto = null;
+
+  function cor(nome) { return getComputedStyle(document.documentElement).getPropertyValue(CORES[nome]).trim(); }
+
+  function desenhar() {
+    const r = palco.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    if (desenho.width !== Math.round(r.width * dpr)) { desenho.width = Math.round(r.width * dpr); desenho.height = Math.round(r.height * dpr); }
+    const W = desenho.width, H = desenho.height;
+    ctxDesenho.clearRect(0, 0, W, H);
+    ctxDesenho.font = `700 ${Math.round(12 * dpr)}px ${getComputedStyle(document.body).fontFamily}`;
+    for (const nome of ['ignorar', 'saida', 'suporte']) {
+      const a = areas[nome], x = a.x * W, y = a.y * H, w = a.w * W, h = a.h * H, c = cor(nome);
+      ctxDesenho.fillStyle = c + '33'; ctxDesenho.fillRect(x, y, w, h);
+      ctxDesenho.lineWidth = 2 * dpr; ctxDesenho.strokeStyle = c;
+      ctxDesenho.setLineDash(nome === 'ignorar' ? [6 * dpr, 4 * dpr] : []); ctxDesenho.strokeRect(x, y, w, h);
+      ctxDesenho.setLineDash([]);
+      ctxDesenho.fillStyle = c; ctxDesenho.fillRect(x, y, ctxDesenho.measureText(NOMES[nome]).width + 10 * dpr, 18 * dpr);
+      ctxDesenho.fillStyle = '#fff'; ctxDesenho.fillText(NOMES[nome], x + 5 * dpr, y + 13 * dpr);
+      if (editando) { ctxDesenho.fillStyle = c; ctxDesenho.fillRect(x + w - 16 * dpr, y + h - 16 * dpr, 16 * dpr, 16 * dpr); }
+    }
+    requestAnimationFrame(desenhar);
+  }
+  requestAnimationFrame(desenhar);
+
+  function posicao(ev) {
+    const r = palco.getBoundingClientRect();
+    return { x: (ev.clientX - r.left) / r.width, y: (ev.clientY - r.top) / r.height, r };
+  }
+  palco.addEventListener('pointerdown', (ev) => {
+    if (!editando) return;
+    const p = posicao(ev), canto = 22 / p.r.width;
+    for (const nome of ['suporte', 'saida', 'ignorar']) {
+      const a = areas[nome];
+      const noCanto = Math.abs(p.x - (a.x + a.w)) < canto && Math.abs(p.y - (a.y + a.h)) < canto * (p.r.width / p.r.height);
+      const dentro = p.x >= a.x && p.x <= a.x + a.w && p.y >= a.y && p.y <= a.y + a.h;
+      if (noCanto || dentro) {
+        arrasto = { nome, modo: noCanto ? 'tamanho' : 'mover', inicio: p, original: { ...a } };
+        palco.setPointerCapture(ev.pointerId); ev.preventDefault(); return;
+      }
+    }
+  });
+  palco.addEventListener('pointermove', (ev) => {
+    if (!arrasto) return;
+    const p = posicao(ev), dx = p.x - arrasto.inicio.x, dy = p.y - arrasto.inicio.y, o = arrasto.original, a = areas[arrasto.nome];
+    const lim = (v, min, max) => Math.min(max, Math.max(min, v));
+    if (arrasto.modo === 'mover') { a.x = lim(o.x + dx, 0, 1 - o.w); a.y = lim(o.y + dy, 0, 1 - o.h); }
+    else { a.w = lim(o.w + dx, 0.04, 1 - o.x); a.h = lim(o.h + dy, 0.04, 1 - o.y); }
+  });
+  palco.addEventListener('pointerup', () => {
+    if (!arrasto) return;
+    arrasto = null; gravar('cangas.areas', areas);
+    contador = criarContador({ areas });
+  });
+
+  $('btnAreas').onclick = () => {
+    editando = !editando;
+    $('btnAreas').classList.toggle('ativo', editando);
+    $('dicaAreas').hidden = !editando; $('medidores').hidden = !editando; $('btnPadrao').hidden = !editando;
+  };
+  $('btnPadrao').onclick = () => { areas = structuredClone(PADRAO.areas); gravar('cangas.areas', areas); contador = criarContador({ areas }); };
+
+  mostrar();
+  // Se a câmera já foi permitida antes, liga sozinha ao abrir o app.
+  try {
+    navigator.permissions.query({ name: 'camera' }).then((p) => { if (p.state === 'granted') ligarCamera(); }, () => {});
+  } catch {}
+})();
+</script>
+</body>
+</html>
