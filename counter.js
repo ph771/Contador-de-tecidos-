@@ -5,13 +5,15 @@
 // Só olha a área do suporte: conta quando uma peça nova fica pendurada e parada ali.
 // Uma faixa em volta do suporte (o "anel") serve para não contar mão, máquina ou pessoa:
 // essas coisas sempre atravessam o anel, enquanto a peça pendurada fica só dentro do suporte.
+// Toda comparação compensa brilho e contraste (a câmera reajusta a luz sozinha, ainda mais
+// contra a luz), então só conta como mudança o que mudou de verdade.
 // Não depende do navegador: a mesma lógica roda no celular e nos testes com vídeo.
 (function (root) {
   const PADRAO = {
     // Área do suporte em frações da imagem (0 a 1).
     suporte: { x: 0.72, y: 0.78, w: 0.28, h: 0.18 },
-    limiarPixel: 25, // diferença de cinza para um pixel contar como "mexeu"
-    // Certa: o suporte fica parado e com desenho diferente do que era antes.
+    limiarPixel: 25, // diferença de cinza (já com a luz compensada) para um pixel contar como "mudou"
+    // Certa: o suporte fica parado e diferente do que era antes.
     suporteParadoMov: 0.03, // fração máxima de pixels mexendo para considerar parado
     suporteParadoMs: 1500, // quanto tempo precisa ficar parado
     suporteMudouNcc: 0.6, // semelhança abaixo disso = peça nova no suporte
@@ -49,8 +51,25 @@
     return out;
   }
 
+  // Índices dos pixels do anel: em cima e dos lados do suporte, fora dele.
+  function indicesAnel(r, w, h, largura) {
+    const m = Math.max(2, Math.round(largura * Math.min(r.x1 - r.x0, r.y1 - r.y0)));
+    const x0 = Math.max(0, r.x0 - m), x1 = Math.min(w, r.x1 + m), y0 = Math.max(0, r.y0 - m);
+    const idx = [];
+    for (let y = y0; y < r.y1; y++) for (let x = x0; x < x1; x++) {
+      if (x >= r.x0 && x < r.x1 && y >= r.y0) continue; // dentro do suporte
+      idx.push(y * w + x);
+    }
+    return Uint32Array.from(idx);
+  }
+  function pegar(img, idx) {
+    const out = new Float32Array(idx.length);
+    for (let i = 0; i < idx.length; i++) out[i] = img[idx[i]];
+    return out;
+  }
+
   // Semelhança de desenho entre duas imagens (correlação normalizada, -1 a 1).
-  // Não muda quando a câmera só clareia ou escurece a imagem inteira.
+  // Não muda quando a câmera só clareia, escurece ou muda o contraste.
   function semelhanca(a, b) {
     const n = a.length;
     let ma = 0, mb = 0;
@@ -68,83 +87,68 @@
     return ab / Math.sqrt(aa * bb);
   }
 
-  // Índices dos pixels do anel: em cima e dos lados do suporte, fora dele.
-  function indicesAnel(r, w, h, largura) {
-    const m = Math.max(2, Math.round(largura * Math.min(r.x1 - r.x0, r.y1 - r.y0)));
-    const x0 = Math.max(0, r.x0 - m), x1 = Math.min(w, r.x1 + m), y0 = Math.max(0, r.y0 - m);
-    const idx = [];
-    for (let y = y0; y < r.y1; y++) for (let x = x0; x < x1; x++) {
-      if (x >= r.x0 && x < r.x1 && y >= r.y0) continue; // dentro do suporte
-      idx.push(y * w + x);
-    }
-    return Uint32Array.from(idx);
-  }
-  function pegar(img, idx) {
-    const out = new Float32Array(idx.length);
-    for (let i = 0; i < idx.length; i++) out[i] = img[idx[i]];
-    return out;
-  }
-  function movimentoIdx(atual, anterior, idx, limiar) {
-    let mexeu = 0;
-    for (let i = 0; i < idx.length; i++) if (Math.abs(atual[idx[i]] - anterior[idx[i]]) > limiar) mexeu++;
-    return idx.length ? mexeu / idx.length : 0;
-  }
-  // Fração de pixels diferentes entre a e b, sem contar uma mudança de brilho igual em tudo.
-  function diferenca(a, b, limiar) {
+  // Fração de pixels diferentes entre a e b depois de compensar a luz: acha o brilho e o
+  // contraste (a ≈ ganho·b + ajuste) que deixam b mais parecido com a, e só conta o que sobra.
+  // Assim, a câmera clareando ou escurecendo a imagem (contra a luz) não vira "mudança".
+  // ganhoMin/ganhoMax limitam quanto de mudança de luz pode ser "explicada" (sem isso, uma
+  // estampa trocada por uma área lisa pareceria só a luz mudando).
+  function diferenca(a, b, limiar, ganhoMin = 0.6, ganhoMax = 1.7) {
     const n = a.length;
     if (!n) return 0;
-    let d = 0;
-    for (let i = 0; i < n; i++) d += a[i] - b[i];
-    d /= n;
+    let ma = 0, mb = 0;
+    for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; }
+    ma /= n; mb /= n;
+    let ab = 0, bb = 0;
+    for (let i = 0; i < n; i++) { const db = b[i] - mb; ab += (a[i] - ma) * db; bb += db * db; }
+    let ganho = bb / n < 9 ? 1 : ab / bb;
+    ganho = Math.min(ganhoMax, Math.max(ganhoMin, ganho));
+    const ajuste = ma - ganho * mb;
     let dif = 0;
-    for (let i = 0; i < n; i++) if (Math.abs(a[i] - b[i] - d) > limiar) dif++;
+    for (let i = 0; i < n; i++) if (Math.abs(a[i] - (ganho * b[i] + ajuste)) > limiar) dif++;
     return dif / n;
   }
 
-  // Fração de pixels que mexeram dentro de r.
-  function movimento(atual, anterior, w, r, limiar) {
-    let mexeu = 0, total = 0;
-    for (let y = r.y0; y < r.y1; y++) {
-      for (let x = r.x0; x < r.x1; x++) {
-        total++;
-        const i = y * w + x;
-        if (Math.abs(atual[i] - anterior[i]) > limiar) mexeu++;
-      }
-    }
-    return total ? mexeu / total : 0;
+  // Mudança de um quadro para o seguinte (0,1 s): nesse tempo a luz só muda um pouco, e o
+  // desenho continua o mesmo. Se o desenho mudou, é movimento de verdade.
+  function movimento(a, b, limiar) {
+    if (semelhanca(a, b) < 0.8) return 1;
+    return diferenca(a, b, limiar, 0.8, 1.25);
   }
 
   function criarContador(opcoes) {
     const cfg = Object.assign({}, PADRAO, opcoes || {});
 
     let anterior = null, largura = 0, altura = 0, rSuporte = null, idxAnel = null;
-    let baseAnel = null, anelParadoDesde = null; // como o anel fica quando não tem nada passando
-    let obstruidoDesde = null;
+    let supAnterior = null, anelAnterior = null;
     let baseSuporte = null; // como o suporte estava da última vez que ficou parado
     let paradoDesde = null;
     let ultimaCerta = null; // { t, baseAntes } para poder desfazer
     let cameraMexendo = false, cameraParadaDesde = null;
-    const leitura = { movSuporte: 0, movTotal: 0, semelhanca: 1, cameraMexendo: false, difAnel: 0, obstruido: false };
-    const tudo = () => ({ x0: 0, y0: 0, x1: largura, y1: altura });
+    let baseAnel = null, anelParadoDesde = null; // como o anel fica quando não tem nada passando
+    let obstruidoDesde = null;
+    const leitura = { movSuporte: 0, movTotal: 0, semelhanca: 1, cameraMexendo: false, difAnel: 0, obstruido: false, obstruidoMs: 0 };
 
     function preparar(w, h) {
       largura = w; altura = h;
       rSuporte = retangulo(cfg.suporte, w, h);
       idxAnel = indicesAnel(rSuporte, w, h, cfg.anelLargura);
-      anterior = null; baseSuporte = null; paradoDesde = null; ultimaCerta = null;
-      baseAnel = null; anelParadoDesde = null;
+      anterior = null; supAnterior = null; anelAnterior = null;
+      baseSuporte = null; paradoDesde = null; ultimaCerta = null;
+      baseAnel = null; anelParadoDesde = null; obstruidoDesde = null;
     }
 
     function processar(img, w, h, t) {
       if (w !== largura || h !== altura || !rSuporte) preparar(w, h);
       const eventos = [];
-      if (!anterior) { anterior = img.slice(); return eventos; }
+      const supAgora = recortar(img, w, rSuporte), anelAgora = pegar(img, idxAnel);
+      if (!anterior) { anterior = img.slice(); supAnterior = supAgora; anelAnterior = anelAgora; return eventos; }
 
       // ---- Celular mexendo: esquece tudo e espera a imagem parar ----
       // (a imagem toda é usada só para isso; nada fora do suporte é contado)
-      const movTotal = movimento(img, anterior, w, tudo(), cfg.limiarPixel);
+      const movTotal = diferenca(img, anterior, cfg.limiarPixel, 0.8, 1.25);
       leitura.movTotal = movTotal;
       if (movTotal >= cfg.cameraMexeuMov) { cameraMexendo = true; cameraParadaDesde = null; }
+      anterior = img.slice();
       if (cameraMexendo) {
         if (movTotal < cfg.cameraParadaMov) {
           if (cameraParadaDesde === null) cameraParadaDesde = t;
@@ -155,34 +159,34 @@
         // Referências antigas não valem mais: a câmera pode ter mudado de posição.
         baseSuporte = null; paradoDesde = null; ultimaCerta = null;
         baseAnel = null; anelParadoDesde = null; obstruidoDesde = null;
+        supAnterior = supAgora; anelAnterior = anelAgora;
         leitura.cameraMexendo = true;
-        anterior = img.slice();
         return eventos;
       }
       leitura.cameraMexendo = false;
 
       // ---- Anel em volta do suporte: está livre ou tem algo atravessando? ----
-      const anelAgora = pegar(img, idxAnel);
-      const movAnel = movimentoIdx(img, anterior, idxAnel, cfg.limiarPixel);
+      const movAnel = movimento(anelAgora, anelAnterior, cfg.limiarPixel);
+      anelAnterior = anelAgora;
       if (movAnel <= cfg.suporteParadoMov) { if (anelParadoDesde === null) anelParadoDesde = t; }
       else anelParadoDesde = null;
       const anelParadoMs = anelParadoDesde === null ? 0 : t - anelParadoDesde;
       let difAnel = baseAnel ? diferenca(anelAgora, baseAnel, cfg.limiarPixel) : 0;
       // Só troca a referência do anel quando ele está parado e quase igual (acompanha a luz).
-      // Algo parado de vez na frente do suporte nunca vira referência: a contagem espera.
       if (anelParadoMs >= cfg.suporteParadoMs && (!baseAnel || difAnel <= cfg.anelLivreDif)) {
         baseAnel = anelAgora; difAnel = 0;
       }
       const anelLivre = baseAnel !== null && difAnel <= cfg.anelLivreDif;
 
       // ---- Certa: suporte parado, diferente de antes e anel livre ----
-      const movSuporte = movimento(img, anterior, w, rSuporte, cfg.limiarPixel);
+      const movSuporte = movimento(supAgora, supAnterior, cfg.limiarPixel);
+      supAnterior = supAgora;
       let sem = 1, difSup = 0, obstruido = false;
       if (movSuporte <= cfg.suporteParadoMov) {
         if (paradoDesde === null) paradoDesde = t;
         const paradoMs = t - paradoDesde;
         if (paradoMs >= cfg.suporteParadoMs) {
-          const agora = recortar(img, w, rSuporte);
+          const agora = supAgora;
           const cenaParadaMs = Math.min(paradoMs, anelParadoMs);
           if (!baseSuporte) {
             if (anelLivre) baseSuporte = agora;
@@ -233,7 +237,6 @@
       leitura.suporteParado = paradoDesde !== null && t - paradoDesde >= cfg.suporteParadoMs;
       leitura.anelLivre = anelLivre;
       leitura.temReferencia = baseSuporte !== null;
-      anterior = img.slice();
       return eventos;
     }
 

@@ -192,7 +192,7 @@ button.perigo { color: var(--alerta) }
   const ctxPequeno = pequeno.getContext('2d', { willReadFrequently: true });
   const LARGURA = 160, AMOSTRA_MS = 100;
   const ENDERECO = 'https://ph771.github.io/Contador-de-tecidos-/';
-  const VERSAO = '8';
+  const VERSAO = '9';
 
   // ---------- Guardar no celular ----------
   function ler(chave, padrao) {
@@ -297,6 +297,7 @@ button.perigo { color: var(--alerta) }
         clearInterval(regressiva); regressiva = null;
         contador = criarContador({ suporte }); ultimaAmostra = -Infinity;
         contando = true; avisoAtual = ''; avisarContagem({ obstruidoMs: 0 });
+        if (luz !== 'travada') travarLuz();
         mostrarBotaoContar(); return;
       }
       b.textContent = `Começa em ${falta}… (toque para cancelar)`; selo('Preparando'); falta--;
@@ -307,7 +308,7 @@ button.perigo { color: var(--alerta) }
 
   function limparTeste() { const el = $('teste'); el.textContent = ''; delete el.dataset.percebida; delete el.dataset.faixa; }
   function abrirAjuste() {
-    pararContagem();
+    pararContagem(); soltarLuz();
     ajustando = true; novo = null;
     $('ajuste').hidden = false; $('placar').hidden = true; palco.classList.add('marcando');
     $('btnMarcar').hidden = true;
@@ -385,8 +386,40 @@ button.perigo { color: var(--alerta) }
   });
 
   let relogio = null;
+  // Trava a luz da câmera (exposição e balanço de branco) onde o celular deixa. Contra a luz,
+  // isso evita que a câmera reajuste o brilho toda vez que alguém passa na frente.
+  let luz = 'automática';
+  async function travarLuz() {
+    const faixa = fluxo && fluxo.getVideoTracks()[0];
+    if (!faixa || !faixa.getCapabilities) { luz = 'automática (este celular não deixa travar)'; return; }
+    try {
+      const cap = faixa.getCapabilities(), atual = faixa.getSettings(), pedido = {};
+      if ((cap.exposureMode || []).includes('manual') && atual.exposureTime) {
+        pedido.exposureMode = 'manual'; pedido.exposureTime = atual.exposureTime;
+        if (atual.iso && cap.iso) pedido.iso = atual.iso;
+      }
+      if ((cap.whiteBalanceMode || []).includes('manual') && atual.colorTemperature) {
+        pedido.whiteBalanceMode = 'manual'; pedido.colorTemperature = atual.colorTemperature;
+      }
+      if (!Object.keys(pedido).length) { luz = 'automática (este celular não deixa travar)'; return; }
+      await faixa.applyConstraints({ advanced: [pedido] });
+      luz = 'travada';
+    } catch { luz = 'automática (este celular não deixou travar)'; }
+  }
+  async function soltarLuz() {
+    const faixa = fluxo && fluxo.getVideoTracks()[0];
+    if (!faixa || luz !== 'travada') return;
+    try {
+      const cap = faixa.getCapabilities(), pedido = {};
+      if ((cap.exposureMode || []).includes('continuous')) pedido.exposureMode = 'continuous';
+      if ((cap.whiteBalanceMode || []).includes('continuous')) pedido.whiteBalanceMode = 'continuous';
+      await faixa.applyConstraints({ advanced: [pedido] });
+    } catch {}
+    luz = 'automática';
+  }
+
   function pararCamera() {
-    rodando = false;
+    rodando = false; luz = 'automática';
     if (relogio) { clearInterval(relogio); relogio = null; }
     if (fluxo) { fluxo.getTracks().forEach((t) => t.stop()); fluxo = null; }
     video.pause(); video.srcObject = null;
@@ -469,7 +502,7 @@ button.perigo { color: var(--alerta) }
     const el = $('diag'); el.hidden = false;
     const ref = l.cameraMexendo ? 'celular mexendo' : l.temReferencia ? 'pronto' : 'aprendendo (deixe o suporte parado)';
     el.innerHTML = `Suporte: <b>${l.suporteParado ? 'parado' : 'mexendo'}</b> · mudança: <b>${Math.round((l.difSuporte || 0) * 100)}%</b>` +
-      ` · faixa: <b>${l.anelLivre ? 'livre' : 'ocupada'}</b> · referência: <b>${ref}</b>`;
+      ` · faixa: <b>${l.anelLivre ? 'livre' : 'ocupada'}</b> · referência: <b>${ref}</b> · luz: <b>${luz}</b>`;
   }
   function passo() {
     if (!rodando) return;
@@ -632,7 +665,7 @@ button.perigo { color: var(--alerta) }
     if (suporte) {
       $('btnPronto').disabled = false; limparTeste();
       estado('Suporte marcado. Pendure uma peça para testar ou toque em <b>Pronto</b>.');
-      contador = criarContador({ suporte }); ultimaAmostra = -Infinity;
+      travarLuz().finally(() => { contador = criarContador({ suporte }); ultimaAmostra = -Infinity; });
     }
   }
   palco.addEventListener('pointerup', soltar);
