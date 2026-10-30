@@ -151,6 +151,7 @@ button.perigo { color: var(--alerta) }
       <h2>Ajuste do suporte</h2>
       <ol>
         <li id="passo1">Com o dedo, <b>desenhe um retângulo na imagem</b> em volta da parte do suporte onde o tecido fica pendurado.</li>
+        <li>A <b>faixa tracejada</b> em volta precisa ficar livre: o app só conta quando nada (mão, máquina, pessoa) está atravessando ela. O retângulo deve cobrir a peça pendurada inteira.</li>
         <li id="passo2">Para testar, <b>pendure uma peça</b> e tire a mão. Quando o app perceber, aparece "Peça percebida" aqui embaixo. Esse teste não entra na contagem.</li>
         <li>Toque em <b>Pronto</b>.</li>
       </ol>
@@ -190,7 +191,7 @@ button.perigo { color: var(--alerta) }
   const ctxPequeno = pequeno.getContext('2d', { willReadFrequently: true });
   const LARGURA = 160, AMOSTRA_MS = 100;
   const ENDERECO = 'https://ph771.github.io/Contador-de-tecidos-/';
-  const VERSAO = '5';
+  const VERSAO = '6';
 
   // ---------- Guardar no celular ----------
   function ler(chave, padrao) {
@@ -294,7 +295,7 @@ button.perigo { color: var(--alerta) }
       if (falta === 0) {
         clearInterval(regressiva); regressiva = null;
         contador = criarContador({ suporte }); ultimaAmostra = -Infinity;
-        contando = true; selo('Contando', 'on'); estado('Contando as peças penduradas no suporte. Não mexa no celular.');
+        contando = true; avisoAtual = ''; avisarContagem({ obstruidoMs: 0 });
         mostrarBotaoContar(); return;
       }
       b.textContent = `Começa em ${falta}… (toque para cancelar)`; selo('Preparando'); falta--;
@@ -303,13 +304,14 @@ button.perigo { color: var(--alerta) }
   }
   $('btnContar').onclick = () => { if (contando || regressiva !== null) pararContagem(); else iniciarContagem(); };
 
+  function limparTeste() { const el = $('teste'); el.textContent = ''; delete el.dataset.percebida; delete el.dataset.faixa; }
   function abrirAjuste() {
     pararContagem();
     ajustando = true; novo = null;
     $('ajuste').hidden = false; $('placar').hidden = true; palco.classList.add('marcando');
     $('btnMarcar').hidden = true;
     $('btnPronto').disabled = !suporte;
-    $('teste').textContent = '';
+    limparTeste();
     contador = suporte ? criarContador({ suporte }) : null; ultimaAmostra = -Infinity;
     selo('Ajuste', 'marcar'); estado('Desenhe o retângulo do suporte na imagem.');
     mostrarBotaoContar();
@@ -323,7 +325,7 @@ button.perigo { color: var(--alerta) }
   $('btnMarcar').onclick = abrirAjuste;
   $('btnPronto').onclick = () => { if (suporte) { gravar('cangas.suporte', suporte); fecharAjuste(); } };
   $('btnRefazer').onclick = () => {
-    suporte = null; $('btnPronto').disabled = true; $('teste').textContent = ''; contador = null;
+    suporte = null; $('btnPronto').disabled = true; limparTeste(); contador = null;
     estado('Desenhe o retângulo do suporte na imagem.');
   };
 
@@ -416,7 +418,7 @@ button.perigo { color: var(--alerta) }
     $('btnTrocar').hidden = false; $('btnGirar').hidden = false; $('btnCamera').textContent = '📷 Religar câmera';
     $('vazio').hidden = true;
     rodando = true; ultimaAmostra = -Infinity;
-    if (contando) { contador = criarContador({ suporte }); selo('Contando', 'on'); estado('Contando as peças penduradas no suporte. Não mexa no celular.'); }
+    if (contando) { contador = criarContador({ suporte }); avisoAtual = ''; avisarContagem({ obstruidoMs: 0 }); }
     else if (!suporte) abrirAjuste();   // primeira vez: começa pelo ajuste
     else if (ajustando) contador = criarContador({ suporte });
     else { $('btnMarcar').hidden = false; falarPausado(); }
@@ -431,7 +433,17 @@ button.perigo { color: var(--alerta) }
     else requestAnimationFrame(passo);
   }
 
-  let avisouMexendo = false;
+  let avisoAtual = '';
+  // Mostra no topo o que está acontecendo com a contagem, sem piscar a cada quadro.
+  function avisarContagem(l) {
+    let chave, s1, tipo, texto;
+    if (l.cameraMexendo) { chave = 'mexendo'; s1 = 'Celular mexendo'; tipo = 'alerta'; texto = 'O celular se mexeu. A contagem volta sozinha quando a imagem ficar parada.'; }
+    else if (l.obstruidoMs > 20000) { chave = 'tapado'; s1 = 'Suporte tapado'; tipo = 'alerta'; texto = 'Tem algo parado na frente do suporte há mais de 20 segundos. Tire de lá, ou toque em <b>Marcar suporte</b> se o suporte mudou de lugar.'; }
+    else if (l.obstruidoMs > 800) { chave = 'esperando'; s1 = 'Esperando'; tipo = ''; texto = 'Tem algo na frente do suporte (mão, máquina ou pessoa). A peça conta quando sair.'; }
+    else { chave = 'contando'; s1 = 'Contando'; tipo = 'on'; texto = 'Contando as peças penduradas no suporte. Não mexa no celular.'; }
+    if (chave === avisoAtual) return;
+    avisoAtual = chave; selo(s1, tipo); estado(texto);
+  }
   window.contadorAtual = () => contador; // para diagnóstico
   function passo() {
     if (!rodando) return;
@@ -449,17 +461,22 @@ button.perigo { color: var(--alerta) }
       for (const e of contador.processar(cinza, w, h, t)) {
         if (ajustando) {
           // Durante o ajuste, só mostra que percebeu; não conta.
-          if (e.tipo === 'certa') { $('teste').textContent = `✓ Peça percebida às ${hora(Date.now())}. O suporte está bem marcado.`; bip([660, 990]); }
+          if (e.tipo === 'certa') {
+            const el = $('teste'); delete el.dataset.faixa; el.dataset.percebida = '1';
+            el.textContent = `✓ Peça percebida às ${hora(Date.now())}. O suporte está bem marcado.`; bip([660, 990]);
+          }
           else if (e.tipo === 'certa-desfeita') $('teste').textContent = 'Era só alguém na frente do suporte; não contaria.';
         } else if (e.tipo === 'certa') adicionar(false);
         else if (e.tipo === 'certa-desfeita') desfazerUltimaAutomatica();
       }
       $('mSup').style.width = Math.min(100, contador.leitura.movSuporte * 200) + '%';
-      const mexendo = contando && contador.leitura.cameraMexendo;
-      if (mexendo !== avisouMexendo) {
-        avisouMexendo = mexendo;
-        if (mexendo) { selo('Celular mexendo', 'alerta'); estado('O celular se mexeu. A contagem volta sozinha quando a imagem ficar parada.'); }
-        else if (contando) { selo('Contando', 'on'); estado('Contando as peças penduradas no suporte. Não mexa no celular.'); }
+      if (contando) avisarContagem(contador.leitura);
+      else if (ajustando) {
+        const el = $('teste'), l = contador.leitura;
+        if (l.obstruidoMs > 3000 && !el.dataset.percebida) {
+          el.dataset.faixa = '1';
+          el.textContent = 'Tem algo atravessando a faixa tracejada. Se for a própria peça pendurada, desenhe o retângulo maior, cobrindo a peça inteira.';
+        } else if (!l.obstruido && el.dataset.faixa) { delete el.dataset.faixa; el.textContent = ''; }
       }
     }
     agendar();
@@ -505,9 +522,19 @@ button.perigo { color: var(--alerta) }
         ctxDesenho.fillRect(0, 0, W, y); ctxDesenho.fillRect(0, y + h, W, H - y - h);
         ctxDesenho.fillRect(0, y, x, h); ctxDesenho.fillRect(x + w, y, W - x - w, h);
       }
+      const tapado = contador && contador.leitura.obstruido && (ajustando || contando);
+      if (ajustando || tapado) { // faixa que precisa ficar livre: em cima e dos lados
+        const m = Math.max(4 * dpr, contador ? contador.config.anelLargura * Math.min(w, h) : 0.35 * Math.min(w, h));
+        ctxDesenho.save();
+        ctxDesenho.setLineDash([7 * dpr, 5 * dpr]); ctxDesenho.lineWidth = 2 * dpr;
+        ctxDesenho.strokeStyle = tapado ? cor('--alerta') : '#ffffff';
+        ctxDesenho.beginPath();
+        ctxDesenho.moveTo(x - m, y + h); ctxDesenho.lineTo(x - m, y - m); ctxDesenho.lineTo(x + w + m, y - m); ctxDesenho.lineTo(x + w + m, y + h);
+        ctxDesenho.stroke(); ctxDesenho.restore();
+      }
       ctxDesenho.lineWidth = 3 * dpr; ctxDesenho.strokeStyle = c; ctxDesenho.strokeRect(x, y, w, h);
       ctxDesenho.font = `700 ${Math.round(13 * dpr)}px ${getComputedStyle(document.body).fontFamily}`;
-      const rotulo = 'SUPORTE', ty = y > 22 * dpr ? y - 20 * dpr : y;
+      const rotulo = 'SUPORTE', ty = y + h + 20 * dpr <= H ? y + h : y;
       ctxDesenho.fillStyle = c; ctxDesenho.fillRect(x, ty, ctxDesenho.measureText(rotulo).width + 12 * dpr, 20 * dpr);
       ctxDesenho.fillStyle = '#fff'; ctxDesenho.fillText(rotulo, x + 6 * dpr, ty + 15 * dpr);
       if (ajustando && !novo) { ctxDesenho.fillStyle = c; ctxDesenho.fillRect(x + w - 18 * dpr, y + h - 18 * dpr, 18 * dpr, 18 * dpr); }
@@ -555,7 +582,7 @@ button.perigo { color: var(--alerta) }
     }
     arrasto = null;
     if (suporte) {
-      $('btnPronto').disabled = false; $('teste').textContent = '';
+      $('btnPronto').disabled = false; limparTeste();
       estado('Suporte marcado. Pendure uma peça para testar ou toque em <b>Pronto</b>.');
       contador = criarContador({ suporte }); ultimaAmostra = -Infinity;
     }
