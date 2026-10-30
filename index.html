@@ -50,8 +50,8 @@ h1 span { color: var(--vinho) }
 @media (max-width: 760px) { .grade { grid-template-columns: minmax(0, 1fr) } }
 
 .palco { position: relative; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; margin-inline: auto; background: #111; border-radius: 10px; overflow: hidden; touch-action: none }
-.palco video, .palco canvas { position: absolute; inset: 0; width: 100%; height: 100% }
-.palco video { object-fit: fill }
+.palco canvas { position: absolute; inset: 0; width: 100%; height: 100% }
+.palco video { position: absolute; left: 50%; top: 50%; width: 100%; height: 100%; object-fit: fill; transform: translate(-50%, -50%) }
 .palco.marcando { outline: 3px solid var(--vinho); outline-offset: 2px; cursor: crosshair }
 .vazio { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 6px; padding: 16px; color: #e9e1e5; font-size: .95rem }
 .vazio strong { font: 700 1.3rem var(--numero); letter-spacing: .03em }
@@ -128,7 +128,6 @@ button.perigo { color: var(--alerta) }
   <section>
     <div class="palco" id="palco">
       <video id="video" playsinline muted></video>
-      <canvas id="tela"></canvas>
       <canvas id="desenho"></canvas>
       <div class="vazio" id="vazio">
         <strong>Câmera desligada</strong>
@@ -186,12 +185,11 @@ button.perigo { color: var(--alerta) }
   const $ = (id) => document.getElementById(id);
   const video = $('video'), desenho = $('desenho'), palco = $('palco');
   const ctxDesenho = desenho.getContext('2d');
-  const tela = $('tela'), ctxTela = tela.getContext('2d');
   const pequeno = document.createElement('canvas');
   const ctxPequeno = pequeno.getContext('2d', { willReadFrequently: true });
   const LARGURA = 160, AMOSTRA_MS = 100;
   const ENDERECO = 'https://ph771.github.io/Contador-de-tecidos-/';
-  const VERSAO = '6';
+  const VERSAO = '7';
 
   // ---------- Guardar no celular ----------
   function ler(chave, padrao) {
@@ -314,18 +312,18 @@ button.perigo { color: var(--alerta) }
     limparTeste();
     contador = suporte ? criarContador({ suporte }) : null; ultimaAmostra = -Infinity;
     selo('Ajuste', 'marcar'); estado('Desenhe o retângulo do suporte na imagem.');
-    mostrarBotaoContar();
+    mostrarBotaoContar(); pedirDesenho();
   }
   function fecharAjuste() {
     ajustando = false;
     $('ajuste').hidden = true; $('placar').hidden = false; palco.classList.remove('marcando');
     $('btnMarcar').hidden = !rodando;
-    falarPausado(); mostrarBotaoContar();
+    falarPausado(); mostrarBotaoContar(); pedirDesenho();
   }
   $('btnMarcar').onclick = abrirAjuste;
   $('btnPronto').onclick = () => { if (suporte) { gravar('cangas.suporte', suporte); fecharAjuste(); } };
   $('btnRefazer').onclick = () => {
-    suporte = null; $('btnPronto').disabled = true; limparTeste(); contador = null;
+    suporte = null; $('btnPronto').disabled = true; limparTeste(); contador = null; pedirDesenho();
     estado('Desenhe o retângulo do suporte na imagem.');
   };
 
@@ -351,20 +349,26 @@ button.perigo { color: var(--alerta) }
     ctx.drawImage(video, -dw / 2, -dh / 2, dw, dh);
     ctx.restore();
   }
-  let proporcao = '';
+  // O próprio vídeo é mostrado na tela, girado pelo navegador (leve). Só recalcula quando
+  // muda o tamanho da câmera, o giro ou o tamanho da tela.
+  let proporcao = '', giroMostrado = null, caixaMostrada = '';
   function mostrarImagem() {
     if (!video.videoWidth) return;
-    const { w, h } = tamanhoGirado();
+    const { w, h } = tamanhoGirado(), g = giroAtual();
     const nova = `${w} / ${h}`;
     if (nova !== proporcao) {
       proporcao = nova;
       palco.style.aspectRatio = nova;
       palco.style.width = `min(100%, calc(70vh * ${(w / h).toFixed(4)}))`;
     }
-    const r = palco.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
-    const cw = Math.round(r.width * dpr), ch = Math.round(r.height * dpr);
-    if (tela.width !== cw || tela.height !== ch) { tela.width = cw; tela.height = ch; }
-    desenharGirado(ctxTela, cw, ch);
+    const r = palco.getBoundingClientRect(), caixa = `${Math.round(r.width)}x${Math.round(r.height)}`;
+    if (g === giroMostrado && caixa === caixaMostrada) return;
+    giroMostrado = g; caixaMostrada = caixa;
+    // Girado de lado, o vídeo precisa ter largura e altura trocadas antes de girar.
+    video.style.width = (g % 180 ? r.height : r.width) + 'px';
+    video.style.height = (g % 180 ? r.width : r.height) + 'px';
+    video.style.transform = `translate(-50%, -50%) rotate(${g}deg)`;
+    pedirDesenho();
   }
 
   async function manterTelaAcesa() {
@@ -377,8 +381,10 @@ button.perigo { color: var(--alerta) }
     if (viva) manterTelaAcesa(); else ligarCamera();
   });
 
+  let relogio = null;
   function pararCamera() {
     rodando = false;
+    if (relogio) { clearInterval(relogio); relogio = null; }
     if (fluxo) { fluxo.getTracks().forEach((t) => t.stop()); fluxo = null; }
     video.pause(); video.srcObject = null;
   }
@@ -392,7 +398,7 @@ button.perigo { color: var(--alerta) }
       return;
     }
     const pedidos = [
-      { video: { facingMode: frente ? 'user' : 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false },
+      { video: { facingMode: frente ? 'user' : 'environment', width: { ideal: 640 }, resizeMode: 'none' }, audio: false },
       { video: { facingMode: frente ? 'user' : 'environment' }, audio: false },
       { video: true, audio: false },
     ];
@@ -424,13 +430,19 @@ button.perigo { color: var(--alerta) }
     else { $('btnMarcar').hidden = false; falarPausado(); }
     mostrarBotaoContar();
     manterTelaAcesa();
-    agendar();
+    // Relógio próprio: analisa 10 vezes por segundo, sem depender de quadros desenhados.
+    if (relogio) clearInterval(relogio);
+    relogio = setInterval(passoSeguro, AMOSTRA_MS);
+    pedirDesenho();
   }
 
-  function agendar() {
-    if (!rodando) return;
-    if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(passo);
-    else requestAnimationFrame(passo);
+  let erroMostrado = false;
+  function passoSeguro() {
+    try { passo(); }
+    catch (e) {
+      // Nunca congela: mostra o erro uma vez e continua tentando no próximo quadro.
+      if (!erroMostrado) { erroMostrado = true; aviso('Erro interno (mande um print para o suporte): ' + (e && e.message)); }
+    }
   }
 
   let avisoAtual = '';
@@ -445,12 +457,13 @@ button.perigo { color: var(--alerta) }
     avisoAtual = chave; selo(s1, tipo); estado(texto);
   }
   window.contadorAtual = () => contador; // para diagnóstico
+  let obstruidoMostrado = false;
   function passo() {
     if (!rodando) return;
     const t = performance.now();
     mostrarImagem();
     const analisar = contador && (contando || ajustando) && !arrasto;
-    if (analisar && t - ultimaAmostra >= AMOSTRA_MS - 5 && video.videoWidth) {
+    if (analisar && video.videoWidth && video.readyState >= 2) {
       ultimaAmostra = t;
       const g = tamanhoGirado();
       const w = LARGURA, h = Math.round((LARGURA * g.h) / g.w);
@@ -478,14 +491,14 @@ button.perigo { color: var(--alerta) }
           el.textContent = 'Tem algo atravessando a faixa tracejada. Se for a própria peça pendurada, desenhe o retângulo maior, cobrindo a peça inteira.';
         } else if (!l.obstruido && el.dataset.faixa) { delete el.dataset.faixa; el.textContent = ''; }
       }
+      if (contador.leitura.obstruido !== obstruidoMostrado) { obstruidoMostrado = contador.leitura.obstruido; pedirDesenho(); }
     }
-    agendar();
   }
 
   $('btnCamera').onclick = ligarCamera;
   $('btnTrocar').onclick = () => { frente = !frente; gravar('cangas.frente', frente); ligarCamera(); };
   $('btnGirar').onclick = () => {
-    giro = (giroAtual() + 90) % 360; gravar('cangas.giro', giro);
+    giro = (giroAtual() + 90) % 360; gravar('cangas.giro', giro); mostrarImagem();
     if (contador) contador = criarContador({ suporte }); // imagem nova: recomeça a referência do suporte
   };
 
@@ -507,10 +520,28 @@ button.perigo { color: var(--alerta) }
 
   // ---------- Desenhar o suporte ----------
   let arrasto = null, novo = null;
-  function cor(token) { return getComputedStyle(document.documentElement).getPropertyValue(token).trim(); }
+  let cores = {}, fonte = 'sans-serif';
+  function lerCores() {
+    const cs = getComputedStyle(document.documentElement);
+    cores = { certa: cs.getPropertyValue('--certa').trim(), alerta: cs.getPropertyValue('--alerta').trim() };
+    fonte = getComputedStyle(document.body).fontFamily;
+  }
+  lerCores();
+  try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { lerCores(); pedirDesenho(); }); } catch {}
+  document.fonts && document.fonts.ready.then(() => { lerCores(); pedirDesenho(); });
+  function cor(token) { return token === '--alerta' ? cores.alerta : cores.certa; }
+
+  // Redesenha o retângulo só quando algo muda (não a cada quadro).
+  let desenhoPedido = false;
+  function pedirDesenho() {
+    if (desenhoPedido) return;
+    desenhoPedido = true;
+    requestAnimationFrame(() => { desenhoPedido = false; try { desenhar(); } catch {} });
+  }
+  try { new ResizeObserver(() => { mostrarImagem(); pedirDesenho(); }).observe(palco); } catch {}
 
   function desenhar() {
-    const r = palco.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const r = palco.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1);
     if (desenho.width !== Math.round(r.width * dpr)) { desenho.width = Math.round(r.width * dpr); desenho.height = Math.round(r.height * dpr); }
     const W = desenho.width, H = desenho.height;
     ctxDesenho.clearRect(0, 0, W, H);
@@ -533,15 +564,13 @@ button.perigo { color: var(--alerta) }
         ctxDesenho.stroke(); ctxDesenho.restore();
       }
       ctxDesenho.lineWidth = 3 * dpr; ctxDesenho.strokeStyle = c; ctxDesenho.strokeRect(x, y, w, h);
-      ctxDesenho.font = `700 ${Math.round(13 * dpr)}px ${getComputedStyle(document.body).fontFamily}`;
+      ctxDesenho.font = `700 ${Math.round(13 * dpr)}px ${fonte}`;
       const rotulo = 'SUPORTE', ty = y + h + 20 * dpr <= H ? y + h : y;
       ctxDesenho.fillStyle = c; ctxDesenho.fillRect(x, ty, ctxDesenho.measureText(rotulo).width + 12 * dpr, 20 * dpr);
       ctxDesenho.fillStyle = '#fff'; ctxDesenho.fillText(rotulo, x + 6 * dpr, ty + 15 * dpr);
       if (ajustando && !novo) { ctxDesenho.fillStyle = c; ctxDesenho.fillRect(x + w - 18 * dpr, y + h - 18 * dpr, 18 * dpr, 18 * dpr); }
     }
-    requestAnimationFrame(desenhar);
   }
-  requestAnimationFrame(desenhar);
 
   function posicao(ev) {
     const r = palco.getBoundingClientRect();
@@ -567,11 +596,12 @@ button.perigo { color: var(--alerta) }
     const lim = (v, min, max) => Math.min(max, Math.max(min, v));
     if (arrasto.modo === 'novo') {
       novo = { x: Math.min(i.x, p.x), y: Math.min(i.y, p.y), w: Math.abs(p.x - i.x), h: Math.abs(p.y - i.y) };
-      return;
+      pedirDesenho(); return;
     }
     const dx = p.x - i.x, dy = p.y - i.y, o = arrasto.original;
     if (arrasto.modo === 'mover') suporte = { ...o, x: lim(o.x + dx, 0, 1 - o.w), y: lim(o.y + dy, 0, 1 - o.h) };
     else suporte = { ...o, w: lim(o.w + dx, 0.05, 1 - o.x), h: lim(o.h + dy, 0.05, 1 - o.y) };
+    pedirDesenho();
   });
   function soltar() {
     if (!arrasto) return;
@@ -580,7 +610,7 @@ button.perigo { color: var(--alerta) }
       else if (!suporte) estado('O retângulo ficou pequeno demais. Arraste o dedo mais longe para desenhar.');
       novo = null;
     }
-    arrasto = null;
+    arrasto = null; pedirDesenho();
     if (suporte) {
       $('btnPronto').disabled = false; limparTeste();
       estado('Suporte marcado. Pendure uma peça para testar ou toque em <b>Pronto</b>.');
